@@ -1,0 +1,42 @@
+name: build
+
+on: [push, workflow_dispatch]
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      # create directory structure for container control directory
+      - name: Prepare env
+        run: |
+          git clone https://invent.kde.org/dkazakov/krita-docker-env krita-auto-1
+          cd krita-auto-1
+          mkdir persistent
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          path: krita-auto-1/persistent
+      - name: Build the docker image and run the container
+        run: |
+          cd krita-auto-1
+          # download the deps archive
+          ./bin/bootstrap-deps.sh
+          # build docker img
+          ./bin/build_image
+          ./bin/run_container
+          # clean
+          rm -rf ./persistent/deps/_install
+          # enter the docker container
+          ./bin/enter
+          # build
+          ~/bin/run_cmake.sh ~/persistent/krita
+          make -j8 install
+          # build appimage
+          ~/bin/build_krita_appimage.sh
+      - name: List dir
+        run: ls -lh krita-auto-1/persistent
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v4.5.0
+        with:
+          name: linux
+          path: krita-auto-1/persistent/*.AppImage

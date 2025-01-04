@@ -28,6 +28,7 @@ jobs:
           # clean
           rm -rf ./persistent/deps/_install
           # enter the docker container and build
+          chmod +x bin/enter_and_build
           ./bin/enter_and_build
       - name: List dir
         run: ls -lh persistent

@@ -7,9 +7,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # create directory structure for container control directory
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          repository: Adanelia/krita-docker-env
+          ref: build
       - name: Prepare env
         run: |
-          git clone https://invent.kde.org/dkazakov/krita-docker-env krita-auto-1
+          mv krita-docker-env krita-auto-1
           cd krita-auto-1
           mkdir persistent
       - name: Checkout
@@ -26,13 +31,8 @@ jobs:
           ./bin/run_container
           # clean
           rm -rf ./persistent/deps/_install
-          # enter the docker container
-          ./bin/enter
-          # build
-          ~/bin/run_cmake.sh ~/persistent/krita
-          make -j8 install
-          # build appimage
-          ~/bin/build_krita_appimage.sh
+          # enter the docker container and build
+          ./bin/enter_and_build
       - name: List dir
         run: ls -lh krita-auto-1/persistent
       - name: Upload a Build Artifact
@@ -40,3 +40,4 @@ jobs:
         with:
           name: linux
           path: krita-auto-1/persistent/*.AppImage
+          retention-days: 1

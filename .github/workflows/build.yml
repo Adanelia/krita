@@ -30,11 +30,16 @@ jobs:
           # enter the docker container and build
           chmod +x bin/enter_and_build
           ./bin/enter_and_build
+      - name: Find
+        run: |
+          find -name "ECMConfig.cmake"
+          find -name "ecm-config.cmake"
+          find -iname "ECM*"
       - name: List dir
         run: ls -lh persistent
-      - name: Upload a Build Artifact
-        uses: actions/upload-artifact@v4.5.0
-        with:
-          name: linux
-          path: persistent/*.AppImage
-          retention-days: 1
+      #- name: Upload a Build Artifact
+        #uses: actions/upload-artifact@v4.5.0
+        #with:
+          #name: linux
+          #path: persistent/*.AppImage
+          #retention-days: 1

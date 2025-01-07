@@ -26,7 +26,7 @@ jobs:
           ./bin/build_image
           ./bin/run_container
           # clean
-          rm -rf ./persistent/deps/_install
+          #rm -rf ./persistent/deps/_install
           # enter the docker container and build
           chmod +x bin/enter_and_build
           ./bin/enter_and_build

@@ -17,7 +17,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4.2.2
         with:
-          path: persistent
+          path: persistent/krita
       - name: Build the docker image and run the container
         run: |
           # download the deps archive

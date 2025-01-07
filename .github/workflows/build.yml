@@ -23,7 +23,7 @@ jobs:
       - name: Build the docker image
         run: ./bin/build_image
       - name: run the container
-          ./bin/run_container
+        run: ./bin/run_container
       - name: clean
         run: rm -rf ./persistent/deps/_install
       - name: enter the docker container and build

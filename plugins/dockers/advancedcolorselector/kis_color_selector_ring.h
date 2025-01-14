@@ -41,6 +41,8 @@ private:
     qreal G {0.0};
     qreal B {0.0};
     qreal Gamma {1.0};
+
+    const float m_rotation {315.0};// [0, 360]
 };
 
 #endif // KIS_COLOR_SELECTOR_RING_H

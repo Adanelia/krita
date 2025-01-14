@@ -10,8 +10,12 @@ jobs:
         uses: actions/checkout@v4.2.2
         with:
           repository: Grum999/KritaBuilder
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          path: krita
       - name: Create a new build environment
-        run: ./kbuilder new --source-path="https://github.com/Adanelia/krita.git -b build" --no-build -v krita-env
+        run: ./kbuilder new --source-path=`pwd`/krita --no-build -v krita-env
       - name: Build
         run: ./kbuilder build --deps --appimage -j8 -v my_build_environment
       - name: List dir

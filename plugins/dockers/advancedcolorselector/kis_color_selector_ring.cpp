@@ -99,6 +99,8 @@ KoColor KisColorSelectorRing::selectColor(int x, int y)
     QPoint ringCoord = QPoint(x, y)-ringMiddle;
     qreal hue = std::atan2(qreal(ringCoord.y()), qreal(ringCoord.x()))+(M_PI);
     hue/=2.*M_PI;
+    hue += m_rotation / 360.0;
+    hue = fmod(hue, 1.0);
     Q_EMIT paramChanged(hue, -1, -1, -1, -1, -1, -1, -1, -1);
     m_lastHue=hue;
     Q_EMIT update();
@@ -163,6 +165,8 @@ void KisColorSelectorRing::paintCache(qreal devicePixelRatioF)
                 float angle = std::atan2((float)relativeVector.y(), (float)relativeVector.x())+((float)M_PI);
                 angle/=2*((float)M_PI);
                 angle*=359.f;
+                angle += m_rotation;
+                angle = fmod(angle, 360.0);
                 if(currentRadius < outerRadiusHighDPI
                    && currentRadius > innerRadiusHighDPI) {
                     cache.setPixel(x, y, m_cachedColors.at(angle));

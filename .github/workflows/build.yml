@@ -6,35 +6,21 @@ jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
-      # create directory structure for container control directory
       - name: Checkout
         uses: actions/checkout@v4.2.2
         with:
-          repository: Adanelia/krita-docker-env
-          ref: build
-      - name: Prepare env
-        run: mkdir persistent
-      - name: Checkout
-        uses: actions/checkout@v4.2.2
-        with:
-          path: persistent/krita
-      - name: download the deps archive
-        run: ./bin/bootstrap-deps.sh
-      - name: Build the docker image
-        run: ./bin/build_image
-      - name: run the container
-        run: ./bin/run_container
-      - name: clean
-        run: rm -rf ./persistent/deps/_install
-      - name: enter the docker container and build
-        run: |
-          chmod +x bin/enter_and_build
-          ./bin/enter_and_build
+          repository: Grum999/KritaBuilder
+      - name: Create a new build environment
+        run: ./kbuilder new --source-path="https://github.com/Adanelia/krita.git -b build" --no-build -v krita-env
+      - name: Build
+        run: ./kbuilder build --deps --appimage -j8 -v my_build_environment
       - name: List dir
-        run: ls -lh persistent
+        run: ls -lah
+      - name: List appimage dir
+        run: ls -lah appimages
       - name: Upload a Build Artifact
         uses: actions/upload-artifact@v4.5.0
         with:
           name: linux
-          path: persistent/*.AppImage
+          path: appimages/*.AppImage
           retention-days: 1

@@ -9,7 +9,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4.2.2
         with:
-          repository: Grum999/KritaBuilder
+          repository: Adanelia/KritaBuilder
+          ref: tweak
       - name: Checkout
         uses: actions/checkout@v4.2.2
         with:

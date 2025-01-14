@@ -15,9 +15,9 @@ jobs:
         with:
           path: krita
       - name: Create a new build environment
-        run: ./kbuilder new --source-path=`pwd`/krita --no-build -v krita-env
+        run: ./kbuilder new --source-path=`pwd`/krita --no-build -v krita_env
       - name: Build
-        run: ./kbuilder build --deps --appimage -j8 -v my_build_environment
+        run: ./kbuilder build --deps --appimage -j8 -v krita_env
       - name: List dir
         run: ls -lah
       - name: List appimage dir

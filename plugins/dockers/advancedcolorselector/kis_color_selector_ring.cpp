@@ -73,7 +73,7 @@ void KisColorSelectorRing::paint(QPainter* painter)
     if(m_parent->displayBlip()) {
         qreal angle;
         int y_start, y_end, x_start, x_end;
-        angle=m_lastHue*2.*M_PI+(M_PI);
+        angle=m_lastHue*2.*M_PI+(M_PI) + m_rotation / 360.0;
         y_start=innerRadius()*sin(angle)+height()/2;
         y_end=outerRadius()*sin(angle)+height()/2;
         x_start=innerRadius()*cos(angle)+width()/2;

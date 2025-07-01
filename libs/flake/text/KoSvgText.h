@@ -8,11 +8,10 @@
 #define KOSVGTEXT_H
 
 #include <QFont>
-#include <QList>
 #include <QPainterPath>
 #include <QTextCharFormat>
 #include <QVariant>
-#include <QVector>
+#include <QLocale>
 #include <array>
 #include <boost/operators.hpp>
 #include <boost/optional.hpp>
@@ -100,9 +99,11 @@ enum TextSpaceCollapse {
     Preserve, ///< Do not collapse any space
     PreserveBreaks, ///< Preserve segment breaks like /n, but otherwise collapse
                     ///< all whitespace.
-    PreserveSpaces ///< Preserve spaces, convert tabs and linebreaks to spaces,
+    PreserveSpaces, ///< Preserve spaces, convert tabs and linebreaks to spaces,
                    ///< required for 'xml:space="preserve"' emulation.
+    BreakSpaces ///< Same as preserve, except each white space and wordseperate is breakable.
 };
+Q_ENUM_NS(TextSpaceCollapse)
 
 /// Part of "white-space", in practice we only support wrap and nowrap.
 enum TextWrap {
@@ -116,6 +117,7 @@ enum TextWrap {
     Pretty ///< select algorithm that gives the best looking result, may require
            ///< looking ahead.
 };
+Q_ENUM_NS(TextWrap)
 
 /// Part of "white-space"
 enum TextSpaceTrim {
@@ -124,6 +126,7 @@ enum TextSpaceTrim {
     DiscardBefore = 0x2, ///< Trim white space before the start of the element.
     DiscardAfter = 0x4 ///< Trim white space after the end of the element.
 };
+Q_ENUM_NS(TextSpaceTrim)
 
 /// Whether to break words.
 enum WordBreak {
@@ -238,7 +241,9 @@ enum BaselineShiftMode {
     ShiftNone, ///< No shift.
     ShiftSub, ///< Use parent font metric for 'subscript'.
     ShiftSuper, ///< Use parent font metric for 'superscript'.
-    ShiftLengthPercentage ///< Css Length Percentage, percentage is em.
+    ShiftLengthPercentage, ///< Css Length Percentage, percentage is lh.
+    ShiftLineTop, ///< this handles css-inline-3 vertical-align:top. Not exposed to ui
+    ShiftLineBottom ///< this handles css-inline-3 vertical-align:bottom. Not exposed to ui
 };
 Q_ENUM_NS(BaselineShiftMode)
 
@@ -297,60 +302,6 @@ enum TextPathSide {
     TextPathSideLeft
 };
 
-/// CSS defines a number of font features as CSS properties. Not all Opentype
-/// features are part of this.
-enum FontVariantFeature {
-    FontVariantNormal, ///< Use default features.
-    FontVariantNone, ///< All features are disabled.
-    /// font-variant-ligatures, common and contextual are on by default.
-    CommonLigatures,
-    NoCommonLigatures,
-    DiscretionaryLigatures,
-    NoDiscretionaryLigatures,
-    HistoricalLigatures,
-    NoHistoricalLigatures,
-    ContextualAlternates,
-    NoContextualAlternates,
-    /// font-variant-position, neither values are on by default.
-    PositionSub,
-    PositionSuper,
-    /// font-variant-caps, none of the values applicable are on by default.
-    SmallCaps,
-    AllSmallCaps,
-    PetiteCaps,
-    AllPetiteCaps,
-    Unicase,
-    TitlingCaps,
-    /// font-variant-numeric, none of the values applicable are on by default.
-    LiningNums,
-    OldStyleNums,
-    ProportionalNums,
-    TabularNums,
-    DiagonalFractions,
-    StackedFractions,
-    Ordinal,
-    SlashedZero,
-    /// font-variant-alternates
-    HistoricalForms,
-    StylisticAlt,
-    StyleSet,
-    CharacterVariant,
-    Swash,
-    Ornaments,
-    Annotation,
-    /// font-variant-east-asian, none of the values applicable are on by
-    /// default.
-    EastAsianJis78,
-    EastAsianJis83,
-    EastAsianJis90,
-    EastAsianJis04,
-    EastAsianSimplified,
-    EastAsianTraditional,
-    EastAsianFullWidth,
-    EastAsianProportionalWidth,
-    EastAsianRuby
-};
-
 Q_DECLARE_FLAGS(TextDecorations, TextDecoration)
 Q_DECLARE_OPERATORS_FOR_FLAGS(TextDecorations)
 
@@ -359,6 +310,79 @@ Q_DECLARE_OPERATORS_FOR_FLAGS(TextSpaceTrims)
 
 Q_DECLARE_FLAGS(HangingPunctuations, HangingPunctuation)
 Q_DECLARE_OPERATORS_FOR_FLAGS(HangingPunctuations)
+
+enum TextRendering {
+    RenderingAuto,
+    RenderingOptimizeSpeed,
+    RenderingOptimizeLegibility,
+    RenderingGeometricPrecision
+};
+Q_ENUM_NS(TextRendering)
+
+/**
+ * @brief The FontMetrics class
+ * A class to keep track of a variety of font metrics.
+ * Note that values are in Freetype pixels and coordinates! (that is 64 times bigger than a regular pixel, and Y is swapped.)
+ */
+struct FontMetrics : public boost::equality_comparable<FontMetrics> {
+    bool isVertical = false; ///< Different fontMetrics count between vertical and horizontal.
+    qint32 fontSize; ///< Currently set size, CSS unit 'em'
+    qint32 zeroAdvance; ///< Advance of the character '0', CSS Unit 'ch', defaults to 0.5 em in horizontal and 1.0 em in vertical.
+    qint32 spaceAdvance;///< Advance of the character ' ', used by tabs.
+    qint32 ideographicAdvance; ///< Advance of the character '水' (U+6C34), CSS Unit ic, defaults to 1 em.
+
+    qint32 xHeight; ///< height of X, defaults to 0.5 fontsize.
+    qint32 capHeight; ///< Height of capital letters, defaults to ascender.
+    QPair<qint32, qint32> subScriptOffset; ///< subscript baseline height, defaults to 1/5th em below alphabetic.
+    QPair<qint32, qint32> superScriptOffset; ///< superscript baseline height, defaults to 2/3rd above alphabetic.
+
+    qint32 ascender; ///< distance from origin to top.
+    qint32 descender; ///< distance for origin to bottom.
+    qint32 lineGap; ///< additional linegap between consequetive lines.
+
+    qint32 alphabeticBaseline; ///< location of alphabetic baseline from origin.
+    qint32 mathematicalBaseline; ///< location of mathematical baseline from origin.
+
+    qint32 ideographicUnderBaseline; ///< location of ideographic under baseline from origin, may fall back to descender.
+    qint32 ideographicCenterBaseline; ///< location of ideographic center baseline from origin,
+                                   ///< default baseline for vertical, centered between over and under.
+    qint32 ideographicOverBaseline; ///< location of ideographic over baseline from origin.
+
+    qint32 ideographicFaceUnderBaseline; ///< location of ideographic face under baseline, that is, the bottom of the glyphs.
+    qint32 ideographicFaceOverBaseline; ///< location of ideographic face over baseline, that is, the top of the glyphs.
+
+    qint32 hangingBaseline; ///< location of the hanging baseline used in north brahmic scripts.
+
+    qint32 underlineOffset; ///< underline offset from alphabetic, positive.
+    qint32 underlineThickness; ///< underline thickness from font.
+    qint32 lineThroughOffset; ///< offset of strike-through from alphabetic baseline.
+    qint32 lineThroughThickness; ///< strikethrough thickness, from font.
+
+    /// These are only used to determine the caret slant proportion.
+    qint32 caretRun;
+    qint32 caretRise;
+    qint32 caretOffset;
+
+    FontMetrics () {
+
+    }
+
+    // Generate fallback font metrics from a fontSize.
+    FontMetrics (qreal fontSizeInPt, bool isHorizontal);
+
+    bool operator==(const FontMetrics & other) const;
+
+    int valueForBaselineValue(Baseline baseline) const;
+
+    void setBaselineValueByTag(const QString &tag, int32_t value);
+
+    void setMetricsValueByTag(const QLatin1String &tag, int32_t value);
+
+    void scaleBaselines(const qreal multiplier);
+
+    void offsetMetricsToNewOrigin(const Baseline baseline);
+};
+QDebug KRITAFLAKE_EXPORT operator<<(QDebug dbg, const KoSvgText::FontMetrics &metrics);
 
 /**
  * CssLengthPercentage is a struct that represents the CSS length-percentage,
@@ -385,6 +409,10 @@ struct CssLengthPercentage : public boost::equality_comparable<CssLengthPercenta
         Percentage, /// 0 to 1.0
         Em, /// multiply by Font-size
         Ex, /// multiply by font-x-height.
+        Cap,/// multiply by font cap height
+        Ch, /// multiply by width of "0", represents avarage proportional script advance.
+        Ic, /// multiply by width of "U+6C34", represents avarage full width script advance.
+        Lh, /// multiply by lineheight.
     };
 
     CssLengthPercentage() {}
@@ -393,7 +421,7 @@ struct CssLengthPercentage : public boost::equality_comparable<CssLengthPercenta
     qreal value = 0.0;
     UnitType unit = Absolute;
 
-    void convertToAbsolute(const qreal fontSizeInPt, const qreal fontXHeightInPt, const UnitType percentageUnit = Em);
+    void convertToAbsolute(const KoSvgText::FontMetrics metrics, const qreal fontSize, const UnitType percentageUnit = Em);
 
     bool operator==(const CssLengthPercentage & other) const {
         return qFuzzyCompare(value, other.value) && unit == other.unit;
@@ -442,10 +470,25 @@ struct AutoLengthPercentage : public boost::equality_comparable<AutoLengthPercen
     }
 };
 
+/// When style is oblique, a custom slant value can be specified for variable fonts.
+struct CssFontStyleData : public boost::equality_comparable<CssFontStyleData>
+{
+    CssFontStyleData() {}
+    CssFontStyleData(QFont::Style _style): style(_style){}
+    QFont::Style style = QFont::StyleNormal;
+    KoSvgText::AutoValue slantValue;
+
+    bool operator==(const CssFontStyleData & other) const {
+        return style == other.style
+                && (style != QFont::StyleOblique || slantValue == other.slantValue);
+    }
+};
+
 
 
 QDebug KRITAFLAKE_EXPORT operator<<(QDebug dbg, const KoSvgText::AutoValue &value);
 QDebug KRITAFLAKE_EXPORT operator<<(QDebug dbg, const KoSvgText::AutoLengthPercentage &value);
+QDebug KRITAFLAKE_EXPORT operator<<(QDebug dbg, const KoSvgText::CssFontStyleData &value);
 
 inline QVariant fromAutoValue(const KoSvgText::AutoValue &value) {
     return QVariant::fromValue(value);
@@ -464,6 +507,8 @@ UnicodeBidi parseUnicodeBidi(const QString &value);
 TextOrientation parseTextOrientation(const QString &value);
 TextOrientation parseTextOrientationFromGlyphOrientation(AutoValue value);
 TextAnchor parseTextAnchor(const QString &value);
+
+TextRendering parseTextRendering(const QString &value);
 
 /**
  * @brief whiteSpaceValueToLongHands
@@ -487,6 +532,8 @@ bool xmlSpaceToLongHands(const QString &value, TextSpaceCollapse &collapseMethod
 WordBreak parseWordBreak(const QString &value);
 LineBreak parseLineBreak(const QString &value);
 TextAlign parseTextAlign(const QString &value);
+
+CssFontStyleData parseFontStyle(const QString &value);
 
 Baseline parseBaseline(const QString &value);
 BaselineShiftMode parseBaselineShiftMode(const QString &value);
@@ -514,9 +561,6 @@ int parseCSSFontStretch(const QString &value, int currentStretch);
 
 int parseCSSFontWeight(const QString &value, int currentWeight);
 
-QMap<QString, FontVariantFeature> fontVariantStrings();
-QStringList fontVariantOpentypeTags(FontVariantFeature feature);
-
 TextPathMethod parseTextPathMethod(const QString &value);
 TextPathSpacing parseTextPathSpacing(const QString &value);
 TextPathSide parseTextPathSide(const QString &value);
@@ -543,6 +587,10 @@ QString writeTextPathSide(TextPathSide value);
 QString writeWordBreak(WordBreak value);
 QString writeLineBreak(LineBreak value);
 QString writeTextAlign(TextAlign value);
+
+QString writeFontStyle(CssFontStyleData value);
+
+QString writeTextRendering(TextRendering value);
 
 /**
  * @brief writeWhiteSpaceValue
@@ -697,6 +745,385 @@ struct StrokeProperty : public boost::equality_comparable<StrokeProperty>
 
 QDebug KRITAFLAKE_EXPORT operator<<(QDebug dbg, const KoSvgText::StrokeProperty &prop);
 
+struct FontFamilyAxis : public boost::equality_comparable<FontFamilyAxis> {
+
+    FontFamilyAxis() {}
+    FontFamilyAxis (QString _tag, qreal _value)
+        : tag(_tag), value(_value) {}
+
+    static FontFamilyAxis weightAxis(qreal val) {
+        FontFamilyAxis axis("wght", val);
+        axis.min = val;
+        axis.max = val;
+        axis.defaultValue = 400;
+        return axis;
+    }
+    static FontFamilyAxis widthAxis(qreal val) {
+        FontFamilyAxis axis("wdth", val);
+        axis.min = val;
+        axis.max = val;
+        axis.defaultValue = 100;
+        return axis;
+    }
+    static FontFamilyAxis slantAxis(qreal val) {
+        FontFamilyAxis axis("slnt", val);
+        axis.min = val;
+        axis.max = val;
+        axis.defaultValue = 0;
+        return axis;
+    }
+
+    QString tag;
+    QHash<QLocale, QString> localizedLabels;
+    qreal min = -1;
+    qreal max = -1;
+    qreal value = 0;
+    qreal defaultValue = 0;
+    bool variableAxis = false;
+    bool axisHidden = false; /// Some variable fonts have axes that are not really supossed to be shown to the user.
+
+    QString debugInfo() const {
+        QString label;
+        if (!localizedLabels.isEmpty()) {
+            label = localizedLabels.value(QLocale(QLocale::English), localizedLabels.values().first());
+        }
+        return QString("Axis: %1 (%2), min: %3, default:%4, max: %5").arg(tag).arg(label).arg(min).arg(value).arg(max);
+    }
+
+    bool operator==(const FontFamilyAxis & other) const {
+        return (other.tag != tag)
+                && (!qFuzzyCompare(other.min, min))
+                && (!qFuzzyCompare(other.max, max))
+                && (!qFuzzyCompare(other.defaultValue, defaultValue))
+                && (!qFuzzyCompare(other.value, value));
+    }
+};
+
+QDebug KRITAFLAKE_EXPORT operator<<(QDebug dbg, const KoSvgText::FontFamilyAxis &axis);
+QDataStream KRITAFLAKE_EXPORT &operator<<(QDataStream &out, const KoSvgText::FontFamilyAxis &axis);
+QDataStream KRITAFLAKE_EXPORT &operator>>(QDataStream &in, KoSvgText::FontFamilyAxis &axis);
+
+enum FontFormatType {
+    UnknownFontType,
+    BDFFontType,
+    Type1FontType,
+    OpenTypeFontType
+};
+Q_ENUM_NS(FontFormatType)
+
+struct FontFamilyStyleInfo : public boost::equality_comparable<FontFamilyStyleInfo> {
+    QHash<QLocale, QString> localizedLabels;
+    QHash<QString, float> instanceCoords;
+
+    bool isItalic = false;
+    bool isOblique = false;
+
+    QString debugInfo() const {
+        QString label;
+        if (!localizedLabels.isEmpty()) {
+            label = localizedLabels.value(QLocale(QLocale::English), localizedLabels.values().first());
+        }
+        QStringList coords;
+        for (int i = 0; i < instanceCoords.size(); i++) {
+            QString key = instanceCoords.keys().at(i);
+            coords.append(key+"="+QString::number(instanceCoords.value(key)));
+        }
+        return QString("Instance: %1, coords: [ %2 ]").arg(label).arg(coords.join(" "));
+    }
+
+    bool operator==(const FontFamilyStyleInfo & other) const {
+        return (other.instanceCoords != instanceCoords)
+                && (other.isItalic != isItalic)
+                && (other.isOblique != isOblique);
+    }
+};
+
+QDebug KRITAFLAKE_EXPORT operator<<(QDebug dbg, const KoSvgText::FontFamilyStyleInfo &style);
+
+/**
+ * @brief The FontFeatureLigatures class
+ * This struct represents css font-variant-ligatures
+ */
+struct FontFeatureLigatures : public boost::equality_comparable<FontFeatureLigatures> {
+    bool commonLigatures = true; ///< 'clig' and 'liga'
+    bool discretionaryLigatures = false; ///< 'dlig'
+    bool historicalLigatures = false; ///< 'hlig'
+    bool contextualAlternates = true; ///< 'calt'
+
+    bool operator==(const FontFeatureLigatures & other) const {
+        return (other.commonLigatures == commonLigatures
+                && other.discretionaryLigatures == discretionaryLigatures
+                && other.historicalLigatures == historicalLigatures
+                && other.contextualAlternates == contextualAlternates);
+    }
+
+    QStringList fontFeatures(const int start, const int end) {
+        QStringList list;
+        const QString length = QString("[%1:%2]").arg(start).arg(end);
+        if (!commonLigatures) {
+            list << "clig" + length + "=0";
+            list << "liga" + length + "=0";
+        }
+        if (discretionaryLigatures) {
+            list << "dlig" + length + "=1";
+        }
+        if (historicalLigatures) {
+            list << "hlig" + length + "=1";
+        }
+        if (!contextualAlternates) {
+            list << "calt" + length + "=0";
+        }
+        return list;
+    }
+};
+FontFeatureLigatures parseFontFeatureLigatures(const QString &value, FontFeatureLigatures features);
+QString writeFontFeatureLigatures(const FontFeatureLigatures &feature);
+QDebug KRITAFLAKE_EXPORT operator<<(QDebug dbg, const KoSvgText::FontFeatureLigatures &feature);
+/**
+ * @brief The FontFeatureLigatures class
+ * This enum represents css font-variant-position
+ */
+enum FontFeaturePosition {
+    PositionNormal,
+    PositionSuper,
+    PositionSub
+};
+FontFeaturePosition parseFontFeaturePosition(const QString &value, FontFeaturePosition feature);
+QString writeFontFeaturePosition(const FontFeaturePosition &value);
+QStringList fontFeaturesPosition(const FontFeaturePosition &feature, const int start, const int end);
+
+Q_ENUM_NS(FontFeaturePosition)
+/// Represents font-feature-caps
+enum FontFeatureCaps {
+    CapsNormal,
+    CapsSmall,
+    CapsAllSmall,
+    CapsPetite,
+    CapsAllPetite,
+    CapsUnicase,
+    CapsTitling
+};
+FontFeatureCaps parseFontFeatureCaps(const QString &value, FontFeatureCaps feature);
+QString writeFontFeatureCaps(const FontFeatureCaps &value);
+QStringList fontFeaturesCaps(const FontFeatureCaps &feature, const int start, const int end);
+
+Q_ENUM_NS(FontFeatureCaps)
+
+enum NumericFigureStyle {
+    NumericFigureStyleNormal,
+    NumericFigureStyleLining,
+    NumericFigureStyleOld
+};
+Q_ENUM_NS(NumericFigureStyle)
+
+enum NumericFigureSpacing {
+    NumericFigureSpacingNormal,
+    NumericFigureSpacingProportional,
+    NumericFigureSpacingTabular
+};
+Q_ENUM_NS(NumericFigureSpacing)
+enum NumericFractions {
+    NumericFractionsNormal,
+    NumericFractionsDiagonal,
+    NumericFractionsStacked
+};
+Q_ENUM_NS(NumericFractions)
+/**
+ * @brief The FontFeatureLigatures class
+ * This struct represents css font-variant-numeric
+ */
+struct FontFeatureNumeric : public boost::equality_comparable<FontFeatureNumeric> {
+
+
+    NumericFigureStyle style = NumericFigureStyleNormal;
+    NumericFigureSpacing spacing = NumericFigureSpacingNormal;
+    NumericFractions fractions = NumericFractionsNormal;
+    bool ordinals = false;
+    bool slashedZero = false;
+    bool operator==(const FontFeatureNumeric & other) const {
+        return (other.style == style
+                && other.spacing == spacing
+                && other.fractions == fractions
+                && other.ordinals == ordinals
+                && other.slashedZero == slashedZero);
+    }
+
+    QStringList fontFeatures(const int start, const int end) {
+        QStringList list;
+        const QString length = QString("[%1:%2]").arg(start).arg(end);
+        switch (style) {
+        case NumericFigureStyleLining:
+            list << "lnum" + length + "=1";
+            break;
+        case NumericFigureStyleOld:
+            list << "onum" + length + "=1";
+            break;
+        default:
+            break;
+        }
+        switch (spacing) {
+        case NumericFigureSpacingProportional:
+            list << "pnum" + length + "=1";
+            break;
+        case NumericFigureSpacingTabular:
+            list << "tnum" + length + "=1";
+            break;
+        default:
+            break;
+        }
+        switch (fractions) {
+        case NumericFractionsDiagonal:
+            list << "frac" + length + "=1";
+            break;
+        case NumericFractionsStacked:
+            list << "afrc" + length + "=1";
+            break;
+        default:
+            break;
+        }
+        if (ordinals) {
+            list << "ordn" + length + "=1";
+        }
+        if (slashedZero) {
+            list << "zero" + length + "=1";
+        }
+        return list;
+    }
+};
+
+FontFeatureNumeric parseFontFeatureNumeric(const QString &value, FontFeatureNumeric features);
+QString writeFontFeatureNumeric(const FontFeatureNumeric &feature);
+QDebug KRITAFLAKE_EXPORT operator<<(QDebug dbg, const KoSvgText::FontFeatureNumeric &feature);
+enum EastAsianVariant {
+    EastAsianVariantNormal,
+    EastAsianJis78,
+    EastAsianJis83,
+    EastAsianJis90,
+    EastAsianJis04,
+    EastAsianSimplified,
+    EastAsianTraditional
+};
+Q_ENUM_NS(EastAsianVariant)
+enum EastAsianWidth {
+    EastAsiantNormalWidth,
+    EastAsianFullWidth,
+    EastAsianProportionalWidth
+};
+Q_ENUM_NS(EastAsianWidth)
+struct FontFeatureEastAsian : public boost::equality_comparable<FontFeatureEastAsian> {
+    EastAsianVariant variant = EastAsianVariantNormal;
+    EastAsianWidth width = EastAsiantNormalWidth;
+    bool ruby = false;
+    bool operator==(const FontFeatureEastAsian & other) const {
+        return (other.variant == variant
+                && other.width == width
+                && other.ruby == ruby);
+    }
+
+    QStringList fontFeatures(const int start, const int end) {
+        QStringList list;
+        const QString length = QString("[%1:%2]").arg(start).arg(end);
+        switch (variant) {
+        case EastAsianJis78:
+            list << "jp78" + length + "=1";
+            break;
+        case EastAsianJis83:
+            list << "jp83" + length + "=1";
+            break;
+        case EastAsianJis90:
+            list << "jp90" + length + "=1";
+            break;
+        case EastAsianJis04:
+            list << "jp04" + length + "=1";
+            break;
+        case EastAsianSimplified:
+            list << "smpl" + length + "=1";
+            break;
+        case EastAsianTraditional:
+            list << "trad" + length + "=1";
+            break;
+        default:
+            break;
+        }
+        switch (width) {
+        case EastAsianFullWidth:
+            list << "fwid" + length + "=1";
+            break;
+        case EastAsianProportionalWidth:
+            list << "pwid" + length + "=1";
+            break;
+        default:
+            break;
+        }
+        if (ruby) {
+            list << "ruby" + length + "=1";
+        }
+        return list;
+    }
+};
+FontFeatureEastAsian parseFontFeatureEastAsian(const QString &value, FontFeatureEastAsian features);
+QString writeFontFeatureEastAsian(const FontFeatureEastAsian &feature);
+QDebug KRITAFLAKE_EXPORT operator<<(QDebug dbg, const KoSvgText::FontFeatureEastAsian &feature);
+
+struct TextUnderlinePosition : public boost::equality_comparable<TextUnderlinePosition> {
+    TextDecorationUnderlinePosition horizontalPosition = UnderlineAuto;
+    TextDecorationUnderlinePosition verticalPosition = UnderlineLeft;
+
+    bool operator==(const TextUnderlinePosition & other) const {
+        return (other.horizontalPosition == horizontalPosition
+                && other.verticalPosition == verticalPosition);
+    }
+
+};
+
+/**
+ * @brief The ResolutionHandler class
+ *
+ * convenience struct to handle all the conversions between pixels and points and freetype pixels.
+ */
+struct ResolutionHandler {
+
+    ResolutionHandler(qreal _xRes = 72.0, qreal _yRes = 72.0, bool _roundToPixelHorizontal = false, bool _roundToPixelVertical = false)
+        : xRes(_xRes), yRes(_yRes), roundToPixelHorizontal(_roundToPixelHorizontal), roundToPixelVertical(_roundToPixelVertical) {}
+
+
+    qreal xRes = 72.0;
+    qreal yRes = 72.0;
+    bool roundToPixelHorizontal = false;
+    bool roundToPixelVertical = false;
+
+    const qreal freeTypePixel = 64.0; // 64 ints to a pixel for freetype, also called "26.6 fp" in the docs.
+    const qreal pointInInch = 72.0; // PostScript points, Krita's vector unit.
+
+    qreal freeTypePixelToPointFactor(const bool x = true) const;
+
+    QTransform freeTypeToPixelTransform() const;
+    QTransform freeTypeToPointTransform() const;
+
+    qreal pointToPixelFactor(const bool x = true) const;
+    QTransform pointToPixel() const;
+
+    qreal pixelToPointFactor(const bool x = true) const;
+    QTransform pixelToPoint() const;
+
+    /// Adjusts the point to rounded pixel values, based on whether roundToPixelHorizontal or roundToPixelVertical are true.
+    QPointF adjust(const QPointF point) const;
+
+    /// Adjusts the point to floored pixel values. @see adjust(QPointF);
+    QPointF adjustFloor(const QPointF point) const;
+    /// Adjusts the point to ceiled pixel values. @see adjust(QPointF);
+    QPointF adjustCeil(const QPointF point) const;
+
+    /// For text decoration, we need to ensure that the whole thing, including width and height is aligned to the pixel.
+    /// So this adds the offset (half the total width) and uses that to round to.
+    QPointF adjustWithOffset(const QPointF point, const QPointF offset) const;
+
+    /// Adjusts the rect to rounded pixel values, based on whether roundToPixelHorizontal or roundToPixelVertical are true.
+    QRectF adjust(const QRectF rect) const;
+};
+
+QDebug KRITAFLAKE_EXPORT operator<<(QDebug dbg, const KoSvgText::TextUnderlinePosition &position);
+
 } // namespace KoSvgText
 
 Q_DECLARE_METATYPE(KoSvgText::CssLengthPercentage)
@@ -711,5 +1138,16 @@ Q_DECLARE_METATYPE(KoSvgText::TextTransformInfo)
 Q_DECLARE_METATYPE(KoSvgText::TextIndentInfo)
 Q_DECLARE_METATYPE(KoSvgText::TabSizeInfo)
 Q_DECLARE_METATYPE(KoSvgText::LineHeightInfo)
+Q_DECLARE_METATYPE(KoSvgText::CssFontStyleData)
+
+Q_DECLARE_METATYPE(KoSvgText::FontFamilyAxis)
+Q_DECLARE_METATYPE(KoSvgText::FontFamilyStyleInfo)
+
+Q_DECLARE_METATYPE(KoSvgText::FontFeatureLigatures)
+Q_DECLARE_METATYPE(KoSvgText::FontFeatureNumeric)
+Q_DECLARE_METATYPE(KoSvgText::FontFeatureEastAsian)
+Q_DECLARE_METATYPE(KoSvgText::TextUnderlinePosition)
+
+Q_DECLARE_METATYPE(KoSvgText::FontMetrics)
 
 #endif // KOSVGTEXT_H

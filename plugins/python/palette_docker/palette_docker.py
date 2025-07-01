@@ -9,12 +9,23 @@
 
 
 # Importing the relevant dependencies:
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QAction, QTabWidget,
-    QLineEdit, QSpinBox, QDialogButtonBox, QToolButton, QDialog,
-    QPlainTextEdit, QCompleter, QMenu)
-from PyQt5.Qt import Qt, pyqtSlot
+try:
+    from PyQt6.QtGui import QPixmap, QIcon, QPainter, QBrush, QPalette
+    from PyQt6.QtWidgets import (
+        QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QTabWidget,
+        QLineEdit, QSpinBox, QDialogButtonBox, QToolButton, QDialog,
+        QPlainTextEdit, QCompleter, QMenu)
+    from PyQt6.QtCore import Qt, pyqtSlot
+    from PyQt6.QtGui import QAction
+except:
+    from PyQt5.QtGui import QPixmap, QIcon, QPainter, QBrush, QPalette
+    from PyQt5.QtWidgets import (
+        QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QAction, QTabWidget,
+        QLineEdit, QSpinBox, QDialogButtonBox, QToolButton, QDialog,
+        QPlainTextEdit, QCompleter, QMenu)
+    from PyQt5.Qt import Qt, pyqtSlot
 from krita import DockWidget, Palette, PaletteView
+from builtins import i18n, i18nc, Application
 
 # import the exporters
 from . import (
@@ -107,7 +118,7 @@ class PaletteDocker(DockWidget):
         self.actionMenu.addAction(self.editPaletteData)
         self.actionMenu.addAction(self.exportToGimp)
         self.actionMenu.addAction(self.exportToInkscape)
-        # self.actionMenu.addAction(self.sortColors)
+        self.actionMenu.addAction(self.sortColors)
 
         self.extra.setMenu(self.actionMenu)
 
@@ -123,18 +134,18 @@ class PaletteDocker(DockWidget):
             self.paletteView.setPalette(self.currentPalette)
             self.slot_fill_combobox()
 
-    @pyqtSlot('KisSwatch')
+    @pyqtSlot('Swatch')
     def slot_swatchSelected(self, entry):
         if (self.canvas()) is not None:
             if (self.canvas().view()) is not None:
                 name = entry.name()
-                if len(entry.id) > 0:
+                if len(entry.id()) > 0:
                     name = entry.id() + " - " + entry.name()
                 if len(name) > 0:
                     if name in self.colorList:
                         self.colorComboBox.setCurrentIndex(
                             self.colorList.index(name))
-                color = self.currentPalette.colorForEntry(entry)
+                color = entry.color()
                 self.canvas().view().setForeGroundColor(color)
 
     def slot_fill_combobox(self):
@@ -146,43 +157,43 @@ class PaletteDocker(DockWidget):
         '''
 
         if self.currentPalette is None:
-            pass
+            return
         self.colorComboBox.clear()
         self.colorList = list()
-#        palette = self.currentPalette
-#        for info in palette.infoList():
-#            entry = info.swatch
-#            color = palette.colorForEntry(entry).colorForCanvas(self.canvas())
-#            colorSquare = QPixmap(12, 12)
-#            if entry.spotColor() is True:
-#                img = colorSquare.toImage()
-#                circlePainter = QPainter()
-#                img.fill(self.colorComboBox.palette().color(QPalette.Base))
-#                circlePainter.begin(img)
-#                brush = QBrush(Qt.SolidPattern)
-#                brush.setColor(color)
-#                circlePainter.setBrush(brush)
-#                circlePainter.pen().setWidth(0)
-#                circlePainter.drawEllipse(0, 0, 11, 11)
-#                circlePainter.end()
-#                colorSquare = QPixmap.fromImage(img)
-#            else:
-#                colorSquare.fill(color)
-#            name = entry.name()
-#            if len(entry.id()) > 0:
-#                name = entry.id() + " - " + entry.name()
-#            self.colorList.append(name)
-#            self.colorComboBox.addItem(QIcon(colorSquare), name)
+        palette = self.currentPalette
+        for i in range(palette.colorsCountTotal()):
+            entry = palette.entryByIndex(i)
+            color = entry.color().colorForCanvas(self.canvas())
+            colorSquare = QPixmap(12, 12)
+            if entry.spotColor() is True:
+                img = colorSquare.toImage()
+                circlePainter = QPainter()
+                img.fill(self.colorComboBox.palette().color(QPalette.ColorRole.Base))
+                circlePainter.begin(img)
+                brush = QBrush(Qt.BrushStyle.SolidPattern)
+                brush.setColor(color)
+                circlePainter.setBrush(brush)
+                circlePainter.pen().setWidth(0)
+                circlePainter.drawEllipse(0, 0, 11, 11)
+                circlePainter.end()
+                colorSquare = QPixmap.fromImage(img)
+            else:
+                colorSquare.fill(color)
+            name = entry.name()
+            if len(entry.id()) > 0:
+                name = entry.id() + " - " + entry.name()
+            self.colorList.append(name)
+            self.colorComboBox.addItem(QIcon(colorSquare), name)
         self.colorComboBox.setEditable(True)
-        self.colorComboBox.setInsertPolicy(QComboBox.NoInsert)
+        self.colorComboBox.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.colorComboBox.completer().setCompletionMode(
-            QCompleter.PopupCompletion)
-        self.colorComboBox.completer().setCaseSensitivity(False)
-        self.colorComboBox.completer().setFilterMode(Qt.MatchContains)
+            QCompleter.CompletionMode.PopupCompletion)
+        self.colorComboBox.completer().setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.colorComboBox.completer().setFilterMode(Qt.MatchFlag.MatchContains)
 
     def slot_get_color_from_combobox(self):
         if self.currentPalette is not None:
-            entry = self.currentPalette.colorSetEntryByIndex(
+            entry = self.currentPalette.entryByIndex(
                 self.colorComboBox.currentIndex())
             self.slot_swatchSelected(entry)
 
@@ -227,12 +238,12 @@ class PaletteDocker(DockWidget):
         paletteComment = QPlainTextEdit()
         paletteComment.appendPlainText(self.currentPalette.comment())
         paletteWidget.layout().addWidget(paletteComment)
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         dialog.layout().addWidget(buttons)
         buttons.accepted.connect(dialog.accept)
         # buttons.rejected.connect(dialog.reject())
 
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.DialogCode.Accepted:
             Resource = Application.resources("palette")[
                 self.cmb_palettes.currentText()]
             Resource.setName(paletteName.text())

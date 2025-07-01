@@ -50,8 +50,6 @@ set(kritawidgetutils_LIB_SRCS
     KisSpinBoxI18nHelper.cpp
     KisScreenMigrationTracker.cpp
 
-    config/kcolorscheme.cpp
-    config/kcolorschememanager.cpp
     config/khelpclient.cpp
     config/klanguagebutton.cpp
     config/krecentfilesaction.cpp
@@ -74,8 +72,6 @@ set(kritawidgetutils_LIB_SRCS
     xmlgui/kbugreport.cpp
     xmlgui/kcheckaccelerators.cpp
     xmlgui/kedittoolbar.cpp
-    xmlgui/kgesture.cpp
-    xmlgui/kgesturemap.cpp
     xmlgui/khelpmenu.cpp
     xmlgui/kkeysequencewidget.cpp
     xmlgui/kmainwindow.cpp
@@ -99,6 +95,19 @@ set(kritawidgetutils_LIB_SRCS
     KisClickableLabel.cpp
 )
 
+if (QT_MAJOR_VERSION STREQUAL "5")
+    set(kritawidgetutils_LIB_SRCS ${kritawidgetutils_LIB_SRCS}
+        config/kcolorscheme.cpp
+    )
+endif()
+
+# Add QtGui's private headers to KKeySequenceWidget, which are
+# required for the shortcuts translation
+set_source_files_properties(xmlgui/kkeysequencewidget.cpp
+    PROPERTIES
+    INCLUDE_DIRECTORIES "${Qt${QT_MAJOR_VERSION}Gui_PRIVATE_INCLUDE_DIRS}"
+    )
+
 if (HAVE_DBUS)
     set(kritawidgetutils_LIB_SRCS ${kritawidgetutils_LIB_SRCS}
         xmlgui/kmainwindowiface.cpp
@@ -114,18 +123,10 @@ qt_add_resources(kritawidgetutils_LIB_SRCS xmlgui/kxmlgui.qrc)
 
 kis_add_library(kritawidgetutils SHARED ${kritawidgetutils_LIB_SRCS})
 
-if (QT_MAJOR_VERSION STREQUAL "6")
-    set (QtGui_PRIVATE_INCLUDE_DIRS ${Qt6Gui_PRIVATE_INCLUDE_DIRS})
-else()
-    set (QtGui_PRIVATE_INCLUDE_DIRS ${Qt5Gui_PRIVATE_INCLUDE_DIRS})
-endif()
-
 target_include_directories(kritawidgetutils
     PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/config>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/xmlgui>
-    PRIVATE
-    ${QtGui_PRIVATE_INCLUDE_DIRS}
 )
 
 generate_export_header(kritawidgetutils BASE_NAME kritawidgetutils)
@@ -165,6 +166,10 @@ target_link_libraries(kritawidgetutils
         
         ${KRITA_WIDGET_UTILS_EXTRA_LIBS}
 )
+
+if (QT_MAJOR_VERSION STREQUAL "6")
+    target_link_libraries(kritawidgetutils PRIVATE KF6::ColorScheme)
+endif()
 
 set_target_properties(kritawidgetutils
     PROPERTIES VERSION ${GENERIC_KRITA_LIB_VERSION} SOVERSION ${GENERIC_KRITA_LIB_SOVERSION}

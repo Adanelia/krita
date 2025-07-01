@@ -38,6 +38,11 @@ export PYTHONPATH=$DEPS_INSTALL_PREFIX/sip
 fi
 export PYTHONHOME=$DEPS_INSTALL_PREFIX
 
+# add our own linuxdeployqt to our PATH environemnt if available
+if [ -d $DEPS_INSTALL_PREFIX/appimage-tools/bin ]; then
+  export PATH=$DEPS_INSTALL_PREFIX/appimage-tools/bin/:$PATH
+fi
+
 source ${KRITA_SOURCES}/packaging/linux/appimage/override_compiler.sh.inc
 
 if [[ $ARCH == "arm64" ]]; then
@@ -143,7 +148,11 @@ fi
 
 # Step 1: Copy over all necessary resources required by dependencies or libraries that are missed by linuxdeployqt
 cp -r $DEPS_INSTALL_PREFIX/share/locale $APPDIR/usr/share/krita
-cp -r $DEPS_INSTALL_PREFIX/share/kf5 $APPDIR/usr/share
+if [ -d $DEPS_INSTALL_PREFIX/share/kf5 ]; then
+    cp -r $DEPS_INSTALL_PREFIX/share/kf5 $APPDIR/usr/share
+else
+    cp -r $DEPS_INSTALL_PREFIX/share/kf6 $APPDIR/usr/share
+fi
 cp -r $DEPS_INSTALL_PREFIX/share/mime $APPDIR/usr/share
 cp -r $DEPS_INSTALL_PREFIX/lib/python3.10 $APPDIR/usr/lib
 if [ -d $DEPS_INSTALL_PREFIX/share/sip ] ; then
@@ -185,18 +194,6 @@ cp -av --preserve=links $DEPS_INSTALL_PREFIX/lib/libfontconfig.so.1* $APPDIR/usr
 cp -av --preserve=links $DEPS_INSTALL_PREFIX/lib/libharfbuzz.so.0* $APPDIR/usr/lib/
 cp -av --preserve=links $DEPS_INSTALL_PREFIX/lib/libfribidi.so.0* $APPDIR/usr/lib/
 cp -av --preserve=links $DEPS_INSTALL_PREFIX/lib/libfreetype.so.6* $APPDIR/usr/lib/
-
-## For some reason linuxdeployqt fails to deploy QtQuick.Layouts library into
-## the AppImage, so just copy it manually for now
-##
-## See the following related bugs for details:
-##     * https://github.com/linuxdeploy/linuxdeploy-plugin-qt/issues/1
-##     * https://github.com/probonopd/linuxdeployqt/issues/25
-
-if [ -d $DEPS_INSTALL_PREFIX/qml/QtQuick/Layouts ]; then
-    mkdir -p $APPDIR/usr/qml/QtQuick/Layouts
-    rsync -prul $DEPS_INSTALL_PREFIX/qml/QtQuick/Layouts $APPDIR/usr/qml/QtQuick/
-fi
 
 ## == MLT Dependencies and Resources ==
 cp -r $DEPS_INSTALL_PREFIX/share/mlt-7 $APPDIR/usr/share/mlt-7
@@ -244,22 +241,16 @@ if [[ -d "$APPDIR/usr/lib/$TRIPLET" ]] ; then
   rm -rf $APPDIR/usr/lib/$TRIPLET/
 fi
 
-# Depending on the status of qt.conf file, qml destination path might be different,
-# fix that
-if [ -d $APPDIR/usr/lib/qml ] ; then
-    mkdir -p $APPDIR/usr/qml
-    rsync -prul $APPDIR/usr/lib/qml/ $APPDIR/usr/qml/
-    rm -rf $APPDIR/usr/lib/qml
-fi
-
 # Step 3: Update the rpath in the various plugins we have to make sure they'll be loadable in an Appimage context
 for lib in $PLUGINS/*.so*; do
   patchelf --set-rpath '$ORIGIN/..' $lib;
 done
 
-for lib in $APPDIR/usr/lib/python3.10/site-packages/PyQt5/*.so*; do
-  patchelf --set-rpath '$ORIGIN/../..' $lib;
-done
+if [ -d $APPDIR/usr/lib/python3.10/site-packages/PyQt5/ ] ; then
+  for lib in $APPDIR/usr/lib/python3.10/site-packages/PyQt5/*.so*; do
+    patchelf --set-rpath '$ORIGIN/../..' $lib;
+  done
+fi
 
 for lib in $APPDIR/usr/lib/python3.10/lib-dynload/*.so*; do
   patchelf --set-rpath '$ORIGIN/../..' $lib;
@@ -340,17 +331,31 @@ if [ -n "$STRIP_APPIMAGE" ]; then
     rm -f $TEMPFILE
 fi
 
+EXTRA_PLUGINS_LIST="$PLUGINS,$APPDIR/usr/lib/krita-python-libs/PyKrita/krita.so"
+
+if [ -f $DEPS_INSTALL_PREFIX/plugins/platforms/libqwayland-generic.so ]; then
+  EXTRA_PLATFORM_PLUGINS="platforms/libqwayland-generic.so,wayland-shell-integration/libxdg-shell.so,wayland-graphics-integration-client/libqt-plugin-wayland-egl.so"
+  EXTRA_PLUGINS_LIST="$EXTRA_PLUGINS_LIST,$EXTRA_PLATFORM_PLUGINS"
+fi
+
+EXTRA_RUNTIME_ARGUMENT=
+
+if [ -f $DEPS_INSTALL_PREFIX/appimage-tools/share/runtime-x86_64 ]; then
+  EXTRA_RUNTIME_ARGUMENT=-runtime-file=$DEPS_INSTALL_PREFIX/appimage-tools/share/runtime-x86_64
+fi
+
 # Step 4: Build the image!!!
 linuxdeployqt $APPDIR/usr/share/applications/org.kde.krita.desktop \
   -executable=$APPDIR/usr/bin/krita \
   ${MLT_BINARIES} \
   ${FFMPEG_BINARIES} \
-  -qmldir=$DEPS_INSTALL_PREFIX/qml \
+  -qmldir=$KRITA_SOURCES/plugins/dockers/textproperties \
   -verbose=2 \
   -bundle-non-qt-libs \
-  -extra-plugins=$PLUGINS,$APPDIR/usr/lib/krita-python-libs/PyKrita/krita.so  \
+  -extra-plugins=$EXTRA_PLUGINS_LIST \
   -updateinformation="${ZSYNC_URL}" \
-  -appimage
+  ${EXTRA_RUNTIME_ARGUMENT} \
+  -appimage || (echo "failed with exit code $?"; exit 1)
 
 # Generate a new name for the Appimage file and rename it accordingly
 

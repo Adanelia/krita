@@ -122,7 +122,7 @@ void KoSvgTextShape::shapeChanged(ChangeType type, KoShape *shape)
     }
     KoShape::shapeChanged(type, shape);
 
-    if (type == StrokeChanged || type == BackgroundChanged || type == ContentChanged) {
+    if (type == ContentChanged) {
         relayout();
     }
 }
@@ -541,8 +541,9 @@ QPainterPath KoSvgTextShape::selectionBoxes(int pos, int anchor)
 {
     int start = qMin(pos, anchor);
     int end = qMax(pos, anchor);
+    end = qMin(d->cursorPos.size()-1, end);
 
-    if (start == end || start < 0 || end >= d->cursorPos.size()) {
+    if (start == end || start < 0) {
         return QPainterPath();
     }
 
@@ -577,13 +578,8 @@ QPainterPath KoSvgTextShape::underlines(int pos, int anchor, KoSvgText::TextDeco
     if (start == end || start < 0 || end >= d->cursorPos.size()) {
         return QPainterPath();
     }
-
     QPainterPathStroker stroker;
-    qreal width = qMax(minimum, d->textData.childBegin()->textDecorationWidths.value(KoSvgText::DecorationUnderline));
-    if (thick) {
-        width *= 2;
-    }
-    stroker.setWidth(width);
+
     KoSvgText::WritingMode mode = KoSvgText::WritingMode(this->textProperties().propertyOrDefault(KoSvgTextProperties::WritingModeId).toInt());
     stroker.setCapStyle(Qt::FlatCap);
     if (style == KoSvgText::Solid) {
@@ -599,10 +595,12 @@ QPainterPath KoSvgTextShape::underlines(int pos, int anchor, KoSvgText::TextDeco
     QPainterPath underPath;
     QPainterPath overPath;
     QPainterPath middlePath;
-    QPointF inset = mode == KoSvgText::HorizontalTB? QPointF(width*0.5, 0): QPointF(0, width*0.5);
+    qint32 strokeWidth = 0;
+    QPointF inset = mode == KoSvgText::HorizontalTB? QPointF(minimum*0.5, 0): QPointF(0, minimum*0.5);
     for (int i = start+1; i <= end; i++) {
         CursorPos pos = d->cursorPos.at(i);
         CharacterResult res = d->result.at(pos.cluster);
+        strokeWidth += res.metrics.underlineThickness;
         const QTransform tf = res.finalTransform();
         QPointF first = res.cursorInfo.caret.p1();
         QPointF last = first;
@@ -641,6 +639,11 @@ QPainterPath KoSvgTextShape::underlines(int pos, int anchor, KoSvgText::TextDeco
         }
     }
 
+    const qreal freetypePixelsToPt = (1.0 / 64.0) * (72. / qMin(d->xRes, d->yRes));
+    const qreal width = strokeWidth > 0 ? qMax(qreal(strokeWidth/qMax(1, end-(start+1)))*freetypePixelsToPt, minimum): minimum;
+
+    stroker.setWidth(thick? width*2: width);
+
     QPainterPath final;
     if (decor.testFlag(KoSvgText::DecorationUnderline)){
         final.addPath(stroker.createStroke(underPath));
@@ -675,7 +678,7 @@ int KoSvgTextShape::posForPoint(QPointF point, int start, int end, bool *overlap
             candidate = i;
             closest = distance;
             if (overlaps) {
-               *overlaps = res.finalTransform().map(res.boundingBox).containsPoint(point, Qt::WindingFill);
+               *overlaps = res.finalTransform().map(res.layoutBox()).containsPoint(point, Qt::WindingFill);
             }
         }
     }
@@ -1053,7 +1056,6 @@ KoSvgTextProperties KoSvgTextShape::textProperties() const
 
 QSharedPointer<KoShapeBackground> KoSvgTextShape::background() const
 {
-    QSharedPointer<KoShapeBackground> bg(new KoColorBackground(Qt::black));
     KoSvgTextProperties props = KisForestDetail::size(d->textData)? d->textData.childBegin()->properties: KoSvgTextProperties();
     if (props.hasProperty(KoSvgTextProperties::FillId)) {
         return props.property(KoSvgTextProperties::FillId).value<KoSvgText::BackgroundProperty>().property;
@@ -1176,11 +1178,10 @@ bool KoSvgTextShape::saveSvg(SvgSavingContext &context)
             }
             if (it == d->textData.compositionBegin()) {
                 context.shapeWriter().startElement("text", false);
+                SvgStyleWriter::saveMetadata(this, context);
 
                 if (!context.strippedTextMode()) {
                     context.shapeWriter().addAttribute("id", context.getID(this));
-
-                    context.shapeWriter().addAttribute("text-rendering", textRenderingString());
 
                     // save the version to distinguish from the buggy Krita version
                     // 2: Wrong font-size.
@@ -1190,7 +1191,6 @@ bool KoSvgTextShape::saveSvg(SvgSavingContext &context)
                     SvgUtil::writeTransformAttributeLazy("transform", transformation(), context.shapeWriter());
                     SvgStyleWriter::saveSvgStyle(this, context);
                 } else {
-                    context.shapeWriter().addAttribute("text-rendering", textRenderingString());
                     SvgStyleWriter::saveSvgFill(this->background(), false, this->outlineRect(), this->size(), this->absoluteTransformation(), context);
                     SvgStyleWriter::saveSvgStroke(this->stroke(), context);
                     SvgStyleWriter::saveSvgBasicStyle(true, 0, paintOrder(),
@@ -1368,7 +1368,7 @@ void KoSvgTextShape::debugParsing()
             qDebug() << QString(spaces + "| Opacity: ") << it->properties.property(KoSvgTextProperties::Opacity);
             qDebug() << QString(spaces + "| PaintOrder: ") << it->properties.hasProperty(KoSvgTextProperties::PaintOrder);
             qDebug() << QString(spaces + "| Visibility set: ") << it->properties.hasProperty(KoSvgTextProperties::Visiblity);
-            qDebug() << QString(spaces + "| TextPath set: ") << (it->textPath);
+            qDebug() << QString(spaces + "| TextPath set: ") << (!it->textPath.isNull());
             qDebug() << QString(spaces + "| Transforms set: ") << it->localTransformations;
             spaces.append(" ");
         }
@@ -1379,10 +1379,31 @@ void KoSvgTextShape::debugParsing()
     }
 }
 
+void KoSvgTextShape::setRelayoutBlocked(const bool disable)
+{
+    d->isLoading = disable;
+}
+
+bool KoSvgTextShape::relayoutIsBlocked() const
+{
+    return d->isLoading;
+}
+
+void KoSvgTextShape::setFontMatchingDisabled(const bool disable)
+{
+    d->disableFontMatching = disable;
+}
+
+bool KoSvgTextShape::fontMatchingDisabled() const
+{
+    return d->disableFontMatching;
+}
+
 void KoSvgTextShape::paint(QPainter &painter) const
 {
     painter.save();
-    if (d->textRendering == OptimizeSpeed || !painter.testRenderHint(QPainter::Antialiasing)) {
+    KoSvgText::TextRendering textRendering = KoSvgText::TextRendering(textProperties().propertyOrDefault(KoSvgTextProperties::TextRenderingId).toInt());
+    if (textRendering == KoSvgText::RenderingOptimizeSpeed || !painter.testRenderHint(QPainter::Antialiasing)) {
         // also apply antialiasing only if antialiasing is active on provided target QPainter
         painter.setRenderHint(QPainter::Antialiasing, false);
         painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
@@ -1396,7 +1417,10 @@ void KoSvgTextShape::paint(QPainter &painter) const
     if (!d->result.isEmpty()) {
         QPainterPath rootBounds;
         rootBounds.addRect(this->outline().boundingRect());
-        d->paintPaths(painter, rootBounds, this, d->result, chunk, currentIndex);
+        d->paintTextDecoration(painter, rootBounds, this, KoSvgText::DecorationUnderline, textRendering);
+        d->paintTextDecoration(painter, rootBounds, this, KoSvgText::DecorationOverline, textRendering);
+        d->paintPaths(painter, rootBounds, this, d->result, textRendering, chunk, currentIndex);
+        d->paintTextDecoration(painter, rootBounds, this, KoSvgText::DecorationLineThrough, textRendering);
     }
 #if 0 // Debug
     Q_FOREACH (KoShape *child, this->shapes()) {
@@ -1458,18 +1482,32 @@ QRectF KoSvgTextShape::outlineRect() const
 QRectF KoSvgTextShape::boundingRect() const
 {
     QRectF result;
-    KoShapeStrokeModelSP stroke = nullptr;
-    for (auto it = d->textData.depthFirstTailBegin(); it != d->textData.depthFirstTailEnd(); it++) {
-        if (it->properties.hasProperty(KoSvgTextProperties::StrokeId)) {
-            stroke = it->properties.property(KoSvgTextProperties::StrokeId).value<KoSvgText::StrokeProperty>().property;
-        }
-        if (stroke) {
-            QRectF bb = it->associatedOutline.boundingRect();
-            KoInsets insets;
-            stroke->strokeInsets(this, insets);
-            result |= bb.adjusted(-insets.left, -insets.top, insets.right, insets.bottom);
+    QList<KoShapeStrokeModelSP> parentStrokes;
+    for (auto it = d->textData.compositionBegin(); it != d->textData.compositionEnd(); it++) {
+        if (it.state() == KisForestDetail::Enter) {
+            if (it->properties.hasProperty(KoSvgTextProperties::StrokeId)) {
+                parentStrokes.append(it->properties.property(KoSvgTextProperties::StrokeId).value<KoSvgText::StrokeProperty>().property);
+            }
         } else {
-            result |= it->associatedOutline.boundingRect();
+            KoShapeStrokeModelSP stroke = parentStrokes.size() > 0? parentStrokes.last(): nullptr;
+            QRectF bb = it->associatedOutline.boundingRect();
+            QMap<KoSvgText::TextDecoration, QPainterPath> decorations = it->textDecorations;
+            for (int i = 0; i < decorations.values().size(); ++i) {
+                bb |= decorations.values().at(i).boundingRect();
+            }
+            if (!bb.isEmpty()) {
+                if (stroke) {
+                    KoInsets insets;
+                    stroke->strokeInsets(this, insets);
+                    result |= bb.adjusted(-insets.left, -insets.top, insets.right, insets.bottom);
+                } else {
+                    result |= bb;
+                }
+            }
+            if (it->properties.hasProperty(KoSvgTextProperties::StrokeId)) {
+                // reset stroke to use parent stroke.
+                parentStrokes.pop_back();
+            }
         }
     }
     return this->absoluteTransformation().mapRect(result);
@@ -1499,6 +1537,15 @@ void KoSvgTextShape::paintDebug(QPainter &painter, const DebugElements elements)
                 pen.setColor(QColor(255, 128, 0, 128));
                 painter.setPen(pen);
                 painter.drawRect(chunk.boundingBox);
+
+                pen.setColor(QColor(255, 0, 0, 128));
+                pen.setStyle(Qt::DashDotDotLine);
+                painter.setPen(pen);
+                painter.drawLine(chunk.length.translated(lineBox.baselineTop));
+                pen.setColor(QColor(0, 128, 0, 128));
+                pen.setStyle(Qt::DashDotLine);
+                painter.setPen(pen);
+                painter.drawLine(chunk.length.translated(lineBox.baselineBottom));
             }
         }
     }
@@ -1513,32 +1560,6 @@ QList<KoShape *> KoSvgTextShape::textOutline() const
     }
 
     return shapes;
-}
-
-void KoSvgTextShape::setTextRenderingFromString(const QString &textRendering)
-{
-    if (textRendering == "optimizeSpeed") {
-        d->textRendering = OptimizeSpeed;
-    } else if (textRendering == "optimizeLegibility") {
-        d->textRendering = OptimizeLegibility;
-    } else if (textRendering == "geometricPrecision") {
-        d->textRendering = GeometricPrecision;
-    } else {
-        d->textRendering = Auto;
-    }
-}
-
-QString KoSvgTextShape::textRenderingString() const
-{
-    if (d->textRendering == OptimizeSpeed) {
-        return "optimizeSpeed";
-    } else if (d->textRendering == OptimizeLegibility) {
-        return "optimizeLegibility";
-    } else if (d->textRendering == GeometricPrecision) {
-        return "geometricPrecision";
-    } else {
-        return "auto";
-    }
 }
 
 void KoSvgTextShape::setShapesInside(QList<KoShape *> shapesInside)

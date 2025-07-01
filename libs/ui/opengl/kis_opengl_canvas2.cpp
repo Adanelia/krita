@@ -20,8 +20,10 @@
 #include <KisViewManager.h>
 #include "KisRepaintDebugger.h"
 
-#include <QPointer>
 #include "KisOpenGLModeProber.h"
+#include "KisOpenGLContextSwitchLock.h"
+
+#include "config-qt-patches-present.h"
 
 static bool OPENGL_SUCCESS = false;
 
@@ -61,6 +63,9 @@ public:
     }
 
     boost::optional<QRect> updateRect;
+#if KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
+    bool shouldSkipRenderingPass = false;
+#endif
     QRect canvasImageDirtyRect;
     KisOpenGLCanvasRenderer *renderer;
     QScopedPointer<KisOpenGLSync> glSyncObject;
@@ -97,9 +102,24 @@ KisOpenGLCanvas2::KisOpenGLCanvas2(KisCanvas2 *canvas,
 #endif
     setAttribute(Qt::WA_InputMethodEnabled, true);
     setAttribute(Qt::WA_DontCreateNativeAncestors, true);
+
+    static int useNativeSurfaceForCanvas = -1;
+    if (useNativeSurfaceForCanvas < 0) {
+        if (!qEnvironmentVariableIsSet("KRITA_USE_NATIVE_CANVAS_SURFACE")) {
+            // currently, the default value is "non-native"
+            useNativeSurfaceForCanvas = 0;
+        } else {
+            useNativeSurfaceForCanvas = qEnvironmentVariableIntValue("KRITA_USE_NATIVE_CANVAS_SURFACE");
+        }
+        qDebug() << "FPS-DEBUG: Krita canvas mode:" << (useNativeSurfaceForCanvas ? "native surface" : "legacy mode") << useNativeSurfaceForCanvas << qEnvironmentVariableIsSet("KRITA_USE_NATIVE_CANVAS_SURFACE");
+    }
+
+    if (useNativeSurfaceForCanvas) {
+        setAttribute(Qt::WA_NativeWindow, true);
+    }
+
     setUpdateBehavior(PartialUpdate);
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
     // we should make sure the texture doesn't have alpha channel,
     // otherwise blending will not work correctly.
     if (KisOpenGLModeProber::instance()->useHDRMode()) {
@@ -118,7 +138,6 @@ KisOpenGLCanvas2::KisOpenGLCanvas2(KisCanvas2 *canvas,
             setTextureFormat(GL_RGB8);
         }
     }
-#endif
 
     connect(KisConfigNotifier::instance(), SIGNAL(configChanged()), SLOT(slotConfigChanged()));
     connect(KisConfigNotifier::instance(), SIGNAL(pixelGridModeChanged()), SLOT(slotPixelGridModeChanged()));
@@ -153,11 +172,13 @@ KisOpenGLCanvas2::~KisOpenGLCanvas2()
 
 void KisOpenGLCanvas2::setDisplayFilter(QSharedPointer<KisDisplayFilter> displayFilter)
 {
+    KisOpenGLContextSwitchLockSkipOnQt5 contextLock(this);
     d->renderer->setDisplayFilter(displayFilter);
 }
 
 void KisOpenGLCanvas2::notifyImageColorSpaceChanged(const KoColorSpace *cs)
 {
+    KisOpenGLContextSwitchLockSkipOnQt5 contextLock(this);
     d->renderer->notifyImageColorSpaceChanged(cs);
 }
 
@@ -197,6 +218,12 @@ void KisOpenGLCanvas2::resizeGL(int width, int height)
 
 void KisOpenGLCanvas2::paintGL()
 {
+#if KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
+    if (d->shouldSkipRenderingPass) {
+        return;
+    }
+#endif
+
     const QRect updateRect = d->updateRect ? *d->updateRect : QRect();
 
     if (!OPENGL_SUCCESS) {
@@ -256,7 +283,31 @@ void KisOpenGLCanvas2::paintEvent(QPaintEvent *e)
         d->updateRect = this->rect();
     }
 
-    QOpenGLWidget::paintEvent(e);
+#if KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
+    /**
+     * When using Qt with a proper update paint event compression, then we don't
+     * need to implement our own one in KisCanvas2, instead we should just skip
+     * frames in paintEvent(), when the previous frame hasn't completed yet.
+     */
+    if (isBusy()) {
+        //qWarning() << "WARNING: paint event delivered with the canvas non-ready, rescheduling...";
+        d->shouldSkipRenderingPass = true;
+        QOpenGLWidget::paintEvent(e);
+        d->shouldSkipRenderingPass = false;
+        QTimer::singleShot(0, this,
+            [this, updateRect = *d->updateRect] () {
+                if (updateRect.isEmpty()) {
+                    this->update();
+                } else {
+                    this->update(updateRect);
+                }
+            });
+    } else
+#endif
+    {
+        QOpenGLWidget::paintEvent(e);
+    }
+
     d->updateRect = boost::none;
 }
 
@@ -345,6 +396,7 @@ void KisOpenGLCanvas2::showEvent(QShowEvent *e)
 
 void KisOpenGLCanvas2::setDisplayColorConverter(KisDisplayColorConverter *colorConverter)
 {
+    KisOpenGLContextSwitchLockSkipOnQt5 contextLock(this);
     d->renderer->setDisplayColorConverter(colorConverter);
 }
 
@@ -356,6 +408,7 @@ void KisOpenGLCanvas2::channelSelectionChanged(const QBitArray &channelFlags)
 
 void KisOpenGLCanvas2::finishResizingImage(qint32 w, qint32 h)
 {
+    KisOpenGLContextSwitchLockSkipOnQt5 contextLock(this);
     d->renderer->finishResizingImage(w, h);
 }
 
@@ -372,31 +425,8 @@ QRect KisOpenGLCanvas2::updateCanvasProjection(KisUpdateInfoSP info)
 
 QVector<QRect> KisOpenGLCanvas2::updateCanvasProjection(const QVector<KisUpdateInfoSP> &infoObjects)
 {
-#if defined(Q_OS_MACOS) || defined(Q_OS_ANDROID)
-    /**
-     * On OSX openGL different (shared) contexts have different execution queues.
-     * It means that the textures uploading and their painting can be easily reordered.
-     * To overcome the issue, we should ensure that the textures are uploaded in the
-     * same openGL context as the painting is done.
-     */
-
-    QOpenGLContext *oldContext = QOpenGLContext::currentContext();
-    QSurface *oldSurface = oldContext ? oldContext->surface() : 0;
-
-    this->makeCurrent();
-#endif
-
-    QVector<QRect> result = KisCanvasWidgetBase::updateCanvasProjection(infoObjects);
-
-#if defined(Q_OS_MACOS) || defined(Q_OS_ANDROID)
-    if (oldContext) {
-        oldContext->makeCurrent(oldSurface);
-    } else {
-        this->doneCurrent();
-    }
-#endif
-
-    return result;
+    KisOpenGLContextSwitchLockSkipOnQt5 contextLock(this);
+    return KisCanvasWidgetBase::updateCanvasProjection(infoObjects);
 }
 
 void KisOpenGLCanvas2::updateCanvasImage(const QRect &imageUpdateRect)

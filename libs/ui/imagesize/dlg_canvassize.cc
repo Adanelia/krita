@@ -17,7 +17,6 @@
 
 #include <kis_document_aware_spin_box_unit_manager.h>
 
-#include <QComboBox>
 #include <QButtonGroup>
 
 const QString DlgCanvasSize::PARAM_PREFIX = "canvasizedlg";
@@ -187,7 +186,7 @@ DlgCanvasSize::DlgCanvasSize(QWidget *parent, int width, int height, double reso
     connect(m_page->constrainProportionsCkb, SIGNAL(toggled(bool)), this, SLOT(slotAspectChanged(bool)));
     connect(m_page->aspectRatioBtn, SIGNAL(keepAspectRatioChanged(bool)), this, SLOT(slotAspectChanged(bool)));
 
-    connect(m_group, SIGNAL(buttonClicked(int)), SLOT(slotAnchorButtonClicked(int)));
+    connect(m_group, SIGNAL(idClicked(int)), SLOT(slotAnchorButtonClicked(int)));
     connect(m_page->canvasPreview, SIGNAL(sigModifiedXOffset(int)), this, SLOT(slotCanvasPreviewXOffsetChanged(int)));
     connect(m_page->canvasPreview, SIGNAL(sigModifiedYOffset(int)), this, SLOT(slotCanvasPreviewYOffsetChanged(int)));
 }
@@ -243,17 +242,18 @@ void DlgCanvasSize::slotAspectChanged(bool keep)
 
     if (keep) {
         // size values may be out of sync, so we need to reset it to defaults
-        m_newWidth = m_originalWidth;
-        m_newHeight = m_originalHeight;
         m_xOffset = 0;
         m_yOffset = 0;
 
         m_page->canvasPreview->blockSignals(true);
         m_page->canvasPreview->setCanvasSize(m_newWidth, m_newHeight);
+        m_page->newWidthDouble->setValue(m_newWidth);
+        m_page->newHeightDouble->setValue(m_newHeight);
         m_page->canvasPreview->setImageOffset(m_xOffset, m_yOffset);
         m_page->canvasPreview->blockSignals(false);
         updateOffset(CENTER);
         updateButtons(CENTER);
+
     }
 }
 

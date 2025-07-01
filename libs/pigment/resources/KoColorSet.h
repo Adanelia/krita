@@ -10,7 +10,6 @@
 
 #include <QObject>
 #include <QColor>
-#include <QVector>
 #include <QScopedPointer>
 #include <QSharedPointer>
 
@@ -115,6 +114,7 @@ public:
     int rowCountWithTitles() const;
 
     quint32 colorCount() const;
+    quint32 slotCount() const;
 
     PaletteType paletteType() const;
     void setPaletteType(PaletteType paletteType);
@@ -254,6 +254,9 @@ public:
 Q_SIGNALS:
 
     void modified();
+    void layoutAboutToChange();
+    void layoutChanged();
+    void entryChanged(int column, int row);
 
 
 private Q_SLOTS:
@@ -265,6 +268,7 @@ private Q_SLOTS:
 private:
 
     void setModified(bool);
+    void notifySwatchChanged(const QString& groupName, int column, int row);
 
     friend struct AddSwatchCommand;
     friend struct RemoveSwatchCommand;

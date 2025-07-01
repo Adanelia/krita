@@ -4,7 +4,6 @@
  *  SPDX-License-Identifier: LGPL-2.0-or-later
  */
 #include "kis_small_color_widget.h"
-#include <QTimer>
 #include "kis_slider_spin_box.h"
 #include <QVBoxLayout>
 #include "kis_signal_compressor.h"
@@ -97,7 +96,7 @@ KisSmallColorWidget::KisSmallColorWidget(QWidget* parent)
     d->saturation = 0;
     d->updateAllowed = true;
 
-    d->repaintCompressor = new KisSignalCompressor(20, KisSignalCompressor::FIRST_ACTIVE, this);
+    d->repaintCompressor = new KisSignalCompressor(25, KisSignalCompressor::FIRST_ACTIVE, this);
     connect(d->repaintCompressor, SIGNAL(timeout()), SLOT(update()));
 
     d->resizeUpdateCompressor = new KisSignalCompressor(200, KisSignalCompressor::FIRST_ACTIVE, this);
@@ -106,7 +105,7 @@ KisSmallColorWidget::KisSmallColorWidget(QWidget* parent)
     d->valueSliderUpdateCompressor = new KisSignalCompressor(100, KisSignalCompressor::FIRST_ACTIVE, this);
     connect(d->valueSliderUpdateCompressor, SIGNAL(timeout()), SLOT(updateSVPalette()));
 
-    d->colorChangedSignalCompressor = new KisSignalCompressor(20, KisSignalCompressor::FIRST_ACTIVE, this);
+    d->colorChangedSignalCompressor = new KisSignalCompressor(25, KisSignalCompressor::FIRST_ACTIVE, this);
     connect(d->colorChangedSignalCompressor, SIGNAL(timeout()), SLOT(slotTellColorChanged()));
 
     {
@@ -117,7 +116,9 @@ KisSmallColorWidget::KisSmallColorWidget(QWidget* parent)
 
     }
 
-    const KisSurfaceColorSpace colorSpace = KisSurfaceColorSpace::DefaultColorSpace;
+    // default color space means that the colors will be passed through to the GPU directly
+    // without any conversion
+    const KisSurfaceColorSpaceWrapper colorSpace = KisSurfaceColorSpaceWrapper::DefaultColorSpace;
 
     d->hueWidget = new KisClickableGLImageWidget(colorSpace, this);
     d->hueWidget->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);

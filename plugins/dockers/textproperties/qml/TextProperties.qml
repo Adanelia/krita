@@ -14,9 +14,16 @@ Rectangle {
     color: sysPalette.window;
     anchors.fill: parent;
 
+    property TextPropertyConfigModel configModel : textPropertyConfigModel;
+
     SystemPalette {
         id: sysPalette;
         colorGroup: SystemPalette.Active
+    }
+
+    PaletteControl {
+        id: paletteControl;
+        colorGroup: root.enabled? SystemPalette.Active: SystemPalette.Disabled;
     }
 
     function setProperties() {
@@ -24,11 +31,18 @@ Rectangle {
         paragraphPropertyList.updateProperties()
     }
 
+    function updatePropertyVisibilityState() {
+        configModel.loadFromConfiguration();
+        characterPropertyList.updatePropertyVisibilityState();
+        paragraphPropertyList.updatePropertyVisibilityState();
+    }
+
     TabBar {
         id: tabs
         anchors.right: parent.right;
         anchors.left: parent.left;
         anchors.top: parent.top;
+        palette: paletteControl.palette;
         TabButton {
             text: i18nc("@title:tab", "Character")
         }
@@ -46,12 +60,14 @@ Rectangle {
 
         TextPropertyBaseList {
             id: characterPropertyList;
-            propertyType: TextPropertyBase.Character;
+            propertyType: TextPropertyConfigModel.Character;
+            configModel: root.configModel;
         }
 
         TextPropertyBaseList {
             id: paragraphPropertyList;
-            propertyType: TextPropertyBase.Paragraph;
+            propertyType: TextPropertyConfigModel.Paragraph;
+            configModel: root.configModel;
         }
     }
 }

@@ -12,9 +12,9 @@
 #include <QQmlEngine>
 #include <QQmlContext>
 #include <QQuickItem>
-#include <QFontDatabase>
 #include <QStringListModel>
 #include <QQuickStyle>
+#include <QColorDialog>
 
 #include <KisViewManager.h>
 #include <kis_canvas_resource_provider.h>
@@ -23,6 +23,10 @@
 #include <KLocalizedContext>
 
 #include <KoResourcePaths.h>
+#include <KisResourceModel.h>
+#include <KisResourceModelProvider.h>
+#include <KisTagModel.h>
+
 #include <KoCanvasResourcesIds.h>
 #include <KoSvgTextPropertyData.h>
 #include <text/lager/KoSvgTextPropertiesModel.h>
@@ -31,7 +35,23 @@
 #include <text/lager/TextIndentModel.h>
 #include <text/lager/TabSizeModel.h>
 #include <text/lager/TextTransformModel.h>
+#include <text/lager/CssFontStyleModel.h>
+#include <text/lager/FontVariantLigaturesModel.h>
+#include <text/lager/FontVariantNumericModel.h>
+#include <text/lager/FontVariantEastAsianModel.h>
+#include <resources/KoFontFamily.h>
 #include <lager/state.hpp>
+
+#include "FontStyleModel.h"
+#include "FontAxesModel.h"
+#include "KoShapeQtQuickLabel.h"
+#include "OpenTypeFeatureModel.h"
+#include "TagFilterProxyModelQmlWrapper.h"
+#include "LocaleHandler.h"
+#include "CssQmlUnitConverter.h"
+#include "TextPropertyConfigModel.h"
+
+#include "TextPropertyConfigDialog.h"
 
 /// Strange place to put this, do we have a better spot?
 KIS_DECLARE_STATIC_INITIALIZER {
@@ -41,7 +61,22 @@ KIS_DECLARE_STATIC_INITIALIZER {
     qmlRegisterType<TextIndentModel>("org.krita.flake.text", 1, 0, "TextIndentModel");
     qmlRegisterType<TabSizeModel>("org.krita.flake.text", 1, 0, "TabSizeModel");
     qmlRegisterType<TextTransformModel>("org.krita.flake.text", 1, 0, "TextTransformModel");
+    qmlRegisterType<CssFontStyleModel>("org.krita.flake.text", 1, 0, "CssFontStyleModel");
+    qmlRegisterType<FontVariantLigaturesModel>("org.krita.flake.text", 1, 0, "FontVariantLigaturesModel");
+    qmlRegisterType<FontVariantNumericModel>("org.krita.flake.text", 1, 0, "FontVariantNumericModel");
+    qmlRegisterType<FontVariantEastAsianModel>("org.krita.flake.text", 1, 0, "FontVariantEastAsianModel");
     qmlRegisterUncreatableMetaObject(KoSvgText::staticMetaObject, "org.krita.flake.text", 1, 0, "KoSvgText", "Error: Namespace with enums");
+
+    qmlRegisterType<FontStyleModel>("org.krita.flake.text", 1, 0, "FontStyleModel");
+    qmlRegisterType<FontAxesModel>("org.krita.flake.text", 1, 0, "FontAxesModel");
+    qmlRegisterType<OpenTypeFeatureFilterModel>("org.krita.flake.text", 1, 0, "OpenTypeFeatureFilterModel");
+    qmlRegisterType<OpenTypeFeatureModel>("org.krita.flake.text", 1, 0, "OpenTypeFeatureModel");
+    qmlRegisterType<KoShapeQtQuickLabel>("org.krita.flake.text", 1, 0, "KoShapeQtQuickLabel");
+    qmlRegisterType<CssQmlUnitConverter>("org.krita.flake.text", 1, 0, "CssQmlUnitConverter");
+    qmlRegisterType<TagFilterProxyModelQmlWrapper>("org.krita.flake.text", 1, 0, "TagFilterProxyModelQmlWrapper");
+    qmlRegisterType<LocaleHandler>("org.krita.flake.text", 1, 0, "LocaleHandler");
+    qmlRegisterType<TextPropertyConfigModel>("org.krita.flake.text", 1, 0, "TextPropertyConfigModel");
+    qmlRegisterType<TextPropertyConfigFilterModel>("org.krita.flake.text", 1, 0, "TextPropertyConfigFilterModel");
 }
 
 
@@ -76,7 +111,12 @@ private:
 struct TextPropertiesDock::Private
 {
     KoSvgTextPropertiesModel *textModel {new KoSvgTextPropertiesModel()};
+    FontStyleModel stylesModel;
+    FontAxesModel axesModel;
+    KisResourceModel *fontModel{nullptr};
     KisCanvasResourceProvider *provider{nullptr};
+    TextPropertyConfigModel *textPropertyConfigModel {nullptr};
+    qreal currentDpi{72.0};
 };
 
 TextPropertiesDock::TextPropertiesDock()
@@ -101,18 +141,34 @@ TextPropertiesDock::TextPropertiesDock()
     m_quickWidget->engine()->addPluginPath(KoResourcePaths::getApplicationRoot() + "/lib/qml/");
     m_quickWidget->engine()->addPluginPath(KoResourcePaths::getApplicationRoot() + "/lib64/qml/");
 
-    m_quickWidget->setPalette(this->palette());
     m_quickWidget->setMinimumHeight(100);
 
-    QFontDatabase fontDataBase = QFontDatabase();
+    d->fontModel = new KisResourceModel(ResourceType::FontFamilies);
+    d->textPropertyConfigModel = new TextPropertyConfigModel(this);
+
+    QList<QLocale> locales;
+    QStringList wellFormedBCPNames;
+    Q_FOREACH (const QString langCode, KLocalizedString::languages()) {
+        locales.append(QLocale(langCode));
+        wellFormedBCPNames.append(langCode.split("_").join("-"));
+    }
+    d->axesModel.setLocales(locales);
+    d->stylesModel.setLocales(locales);
+
+    connect(&d->axesModel, SIGNAL(axisValuesChanged()), this, SLOT(slotUpdateAxesValues()));
 
     m_quickWidget->rootContext()->setContextProperty("textPropertiesModel", d->textModel);
-    m_quickWidget->rootContext()->setContextProperty("fontFamiliesModel", QVariant::fromValue(fontDataBase.families()));
+    m_quickWidget->rootContext()->setContextProperty("fontStylesModel", QVariant::fromValue(&d->stylesModel));
+    m_quickWidget->rootContext()->setContextProperty("fontAxesModel", QVariant::fromValue(&d->axesModel));
+    m_quickWidget->rootContext()->setContextProperty("textPropertyConfigModel", QVariant::fromValue(d->textPropertyConfigModel));
+    m_quickWidget->rootContext()->setContextProperty("locales", QVariant::fromValue(wellFormedBCPNames));
+    m_quickWidget->rootContext()->setContextProperty("canvasDPI", QVariant::fromValue(d->currentDpi));
     connect(d->textModel, SIGNAL(textPropertyChanged()),
             this, SLOT(slotTextPropertiesChanged()));
     m_quickWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
     m_quickWidget->setSource(QUrl("qrc:/TextProperties.qml"));
 
+    m_quickWidget->setPalette(this->palette());
 }
 
 TextPropertiesDock::~TextPropertiesDock()
@@ -131,6 +187,11 @@ void TextPropertiesDock::setViewManager(KisViewManager *kisview)
     if (d->provider) {
         connect(d->provider, SIGNAL(sigTextPropertiesChanged()),
                 this, SLOT(slotCanvasTextPropertiesChanged()));
+
+        // This initializes the docker to an empty entry;
+        KoSvgTextPropertyData textData;
+        textData.inheritedProperties = KoSvgTextProperties();
+        d->provider->setTextPropertyData(textData);
     }
 }
 
@@ -149,6 +210,10 @@ void TextPropertiesDock::setCanvas(KoCanvasBase *canvas)
     KIS_ASSERT(canvas);
 
     m_canvas = dynamic_cast<KisCanvas2*>(canvas);
+    if (m_canvas && m_canvas->currentImage()) {
+        d->currentDpi = m_canvas->currentImage()->xRes() * 72.0;
+        m_quickWidget->rootContext()->setContextProperty("canvasDPI", QVariant::fromValue(d->currentDpi));
+    }
 }
 
 void TextPropertiesDock::unsetCanvas()
@@ -164,11 +229,28 @@ void TextPropertiesDock::connectAutoEnabler(QObject *watched)
     new TextPropertyAutoEnabler(watched, watched);
 }
 
+QColor TextPropertiesDock::modalColorDialog(QColor oldColor)
+{
+    QColor c = QColorDialog::getColor(oldColor);
+    return c.isValid()? c: oldColor;
+}
+
+void TextPropertiesDock::callModalTextPropertyConfigDialog()
+{
+    TextPropertyConfigDialog dialog(this);
+    dialog.setTextPropertyConfigModel(d->textPropertyConfigModel);
+    if (dialog.exec() == QDialog::Accepted) {
+        dialog.model()->saveConfiguration();
+        QMetaObject::invokeMethod(m_quickWidget->rootObject(), "updatePropertyVisibilityState");
+    }
+}
+
 void TextPropertiesDock::slotCanvasTextPropertiesChanged()
 {
     KoSvgTextPropertyData data = d->provider->textPropertyData();
     if (d->textModel->textData.get() != data) {
         d->textModel->textData.set(data);
+
         QMetaObject::invokeMethod(m_quickWidget->rootObject(), "setProperties");
     }
 }
@@ -180,7 +262,50 @@ void TextPropertiesDock::slotTextPropertiesChanged()
     debugFlake << Q_FUNC_INFO << textData;
     if (d->provider && d->provider->textPropertyData() != textData) {
         QMetaObject::invokeMethod(m_quickWidget->rootObject(), "setProperties");
+
         d->provider->setTextPropertyData(textData);
     }
+}
+
+void TextPropertiesDock::slotUpdateStylesModel()
+{
+    QStringList families = d->textModel->fontFamilies();
+    QList<KoSvgText::FontFamilyStyleInfo> styles;
+    QList<KoSvgText::FontFamilyAxis> axes;
+
+    if (!families.isEmpty() && d->fontModel) {
+        QString familyName = wwsFontFamilyName(families.first());
+        QVector<KoResourceSP> res = d->fontModel->resourcesForFilename(familyName);
+        if (!res.isEmpty()) {
+            KoFontFamilySP family = res.first().staticCast<KoFontFamily>();
+            if (family) {
+                styles = family->styles();
+                axes = family->axes();
+            }
+        }
+    }
+    d->axesModel.setBlockAxesValuesSignal(true);
+    d->axesModel.setAxesData(axes);
+    d->axesModel.setAxisValues(d->textModel->axisValues());
+    d->axesModel.setBlockAxesValuesSignal(false);
+    d->stylesModel.setStylesInfo(styles);
+}
+
+void TextPropertiesDock::slotUpdateAxesValues()
+{
+    if (d->axesModel.axesValueSignalBlocked()) return;
+    if (d->axesModel.axisValues() == d->textModel->axisValues())
+        return;
+    d->textModel->setaxisValues(d->axesModel.axisValues());
+}
+
+#include <KoFontRegistry.h>
+QString TextPropertiesDock::wwsFontFamilyName(QString familyName)
+{
+    std::optional<QString> name = KoFontRegistry::instance()->wwsNameByFamilyName(familyName);
+    if (!name) {
+        return familyName;
+    }
+    return name.value();
 }
 #include "TextPropertiesDock.moc"

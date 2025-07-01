@@ -10,9 +10,7 @@
 
 #include <QScopedPointer>
 #include <QTableView>
-#include <QPushButton>
 #include <QPixmap>
-#include <QIcon>
 
 #include <KoColorSet.h>
 #include "kritawidgets_export.h"
@@ -95,7 +93,6 @@ public:
 Q_SIGNALS:
     void sigIndexSelected(const QModelIndex &index);
     void sigColorSelected(const KoColor &);
-    void sigPaletteUpdatedFromModel();
 
 public Q_SLOTS:
     /**

@@ -16,7 +16,6 @@
 #include <QWidget>
 #include <QVBoxLayout>
 #include <QTime>
-#include <QLabel>
 #include <QMouseEvent>
 #include <QScreen>
 #include <QScreen>
@@ -93,6 +92,7 @@
 
 #include "KisSnapPixelStrategy.h"
 #include "KisDisplayConfig.h"
+#include "config-qt-patches-present.h"
 
 
 class Q_DECL_HIDDEN KisCanvas2::KisCanvas2Private
@@ -139,6 +139,12 @@ public:
     ~KisCanvas2Private()
     {
         inputActionGroupsMaskInterface->m_canvasPrivateRef = nullptr;
+
+        // We need to make sure that the QScopedPointer gets freed within the scope
+        // of KisCanvas2Private's lifespan. For some reason, this isn't guaranteed
+        // and was causing a crash when closing a file when playback is happening
+        // and there are multiple images. See Bug: 499658
+        animationPlayer.reset();
     }
 
 
@@ -153,7 +159,9 @@ public:
     KisPrescaledProjectionSP prescaledProjection;
     bool vastScrolling = false;
 
+#if !KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
     KisSignalCompressor canvasUpdateCompressor;
+#endif
     QRect savedCanvasProjectionUpdateRect;
     QRect savedOverlayUpdateRect;
     bool updateSceneRequested = false;
@@ -241,8 +249,10 @@ KisCanvas2::KisCanvas2(KisCoordinatesConverter *coordConverter, KoCanvasResource
 
     KisImageConfig config(false);
 
+#if !KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
     m_d->canvasUpdateCompressor.setDelay(1000 / config.fpsLimit());
     m_d->canvasUpdateCompressor.setMode(KisSignalCompressor::FIRST_ACTIVE);
+#endif
 
     m_d->frameRenderStartCompressor.setDelay(1000 / config.fpsLimit());
     m_d->frameRenderStartCompressor.setMode(KisSignalCompressor::FIRST_ACTIVE);
@@ -287,7 +297,9 @@ void KisCanvas2::setup()
     connect(kritaShapeController, SIGNAL(currentLayerChanged(const KoShapeLayer*)),
             selectedShapesProxy(), SIGNAL(currentLayerChanged(const KoShapeLayer*)));
 
+#if !KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
     connect(&m_d->canvasUpdateCompressor, SIGNAL(timeout()), SLOT(slotDoCanvasUpdate()));
+#endif
 
     connect(this, SIGNAL(sigCanvasCacheUpdated()), &m_d->frameRenderStartCompressor, SLOT(start()));
     connect(&m_d->frameRenderStartCompressor, SIGNAL(timeout()), SLOT(updateCanvasProjection()));
@@ -760,14 +772,14 @@ void KisCanvas2::fetchProofingOptions()
 
 void KisCanvas2::updateProofingState()
 {
-    KoColorConversionTransformation::ConversionFlags conversionFlags = m_d->proofingConfig->conversionFlags;
-    conversionFlags.setFlag(KoColorConversionTransformation::SoftProofing, false);
+    KoColorConversionTransformation::ConversionFlags displayFlags = m_d->proofingConfig->displayFlags;
+    displayFlags.setFlag(KoColorConversionTransformation::SoftProofing, false);
 
     if (image()->colorSpace()->colorDepthId().id().contains("U")) {
-        conversionFlags.setFlag(KoColorConversionTransformation::SoftProofing, imageView()->softProofing());
-        conversionFlags.setFlag(KoColorConversionTransformation::GamutCheck, imageView()->gamutCheck());
+        displayFlags.setFlag(KoColorConversionTransformation::SoftProofing, imageView()->softProofing());
+        displayFlags.setFlag(KoColorConversionTransformation::GamutCheck, imageView()->gamutCheck());
     }
-    m_d->proofingConfig->conversionFlags = conversionFlags;
+    m_d->proofingConfig->displayFlags = displayFlags;
 
     m_d->proofingConfigUpdated = true;
 }
@@ -935,8 +947,23 @@ void KisCanvas2::slotSetLodUpdatesBlocked(bool value)
     Q_EMIT sigCanvasCacheUpdated();
 }
 
+void KisCanvas2::requestCanvasUpdateMaybeCompressed()
+{
+    /**
+    * If Qt has our custom patch for global updates compression, then we shouldn't do
+    * our own compression here in the canvas. Everything will be done in Qt.
+    */
+#if !KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
+    m_d->canvasUpdateCompressor.start();
+#else
+    slotDoCanvasUpdate();
+#endif
+}
+
 void KisCanvas2::slotDoCanvasUpdate()
 {
+
+#if !KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
     /**
      * WARNING: in isBusy() we access openGL functions without making the painting
      * context current. We hope that currently active context will be Qt's one,
@@ -947,6 +974,7 @@ void KisCanvas2::slotDoCanvasUpdate()
         m_d->canvasUpdateCompressor.start();
         return;
     }
+#endif
 
     QRect combinedUpdateRect = m_d->savedCanvasProjectionUpdateRect | m_d->savedOverlayUpdateRect;
     if (!combinedUpdateRect.isEmpty()) {
@@ -997,7 +1025,7 @@ void KisCanvas2::updateCanvasWidgetImpl(const QRect &rc)
     // changed, so we update both.
     m_d->savedCanvasProjectionUpdateRect |= rect;
     m_d->savedOverlayUpdateRect |= rect;
-    m_d->canvasUpdateCompressor.start();
+    requestCanvasUpdateMaybeCompressed();
 }
 
 void KisCanvas2::updateCanvas()
@@ -1027,14 +1055,14 @@ void KisCanvas2::updateCanvasProjection(const QRectF &docRect)
     QRect widgetRect = m_d->docUpdateRectToWidget(docRect);
     if (!widgetRect.isEmpty()) {
         m_d->savedCanvasProjectionUpdateRect |= widgetRect;
-        m_d->canvasUpdateCompressor.start();
+        requestCanvasUpdateMaybeCompressed();
     }
 }
 
 void KisCanvas2::updateCanvasDecorations()
 {
     m_d->savedOverlayUpdateRect = m_d->canvasWidget->widget()->rect();
-    m_d->canvasUpdateCompressor.start();
+    requestCanvasUpdateMaybeCompressed();
 }
 
 void KisCanvas2::updateCanvasDecorations(const QRectF &docRect)
@@ -1042,7 +1070,7 @@ void KisCanvas2::updateCanvasDecorations(const QRectF &docRect)
     QRect widgetRect = m_d->docUpdateRectToWidget(docRect);
     if (!widgetRect.isEmpty()) {
         m_d->savedOverlayUpdateRect |= widgetRect;
-        m_d->canvasUpdateCompressor.start();
+        requestCanvasUpdateMaybeCompressed();
     }
 }
 
@@ -1059,14 +1087,18 @@ void KisCanvas2::updateCanvasToolOutlineWdg(const QRect &widgetRect)
     QRect rect = widgetRect & m_d->canvasWidget->widget()->rect();
     if (!rect.isEmpty()) {
         m_d->savedOverlayUpdateRect |= rect;
+#ifdef HAVE_NO_QT_UPDATE_COMPRESSIO
         m_d->canvasUpdateCompressor.start();
+#else
+        slotDoCanvasUpdate();
+#endif
     }
 }
 
 void KisCanvas2::updateCanvasScene()
 {
     m_d->updateSceneRequested = true;
-    m_d->canvasUpdateCompressor.start();
+    requestCanvasUpdateMaybeCompressed();
 }
 
 void KisCanvas2::disconnectCanvasObserver(QObject *object)

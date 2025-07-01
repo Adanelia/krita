@@ -7,34 +7,38 @@ import QtQuick 2.0
 import QtQuick.Controls 2.0
 import QtQuick.Layouts 1.12
 import org.krita.flake.text 1.0
+import org.krita.components 1.0
 
 TextPropertyBase {
-    propertyName: i18nc("@label:spinbox", "Font Size");
-    propertyType: TextPropertyBase.Character;
+    propertyTitle: i18nc("@label:spinbox", "Font Size");
+    propertyName: "font-size";
+    propertyType: TextPropertyConfigModel.Character;
+    visibilityState: TextPropertyConfigModel.AlwaysVisible;
     toolTip: i18nc("@info:tooltip",
                    "Font size allows setting the size of the characters.");
     searchTerms: i18nc("comma separated search terms for the fontsize property, matching is case-insensitive",
                        "size, small, big, medium");
 
-    property alias fontSize: fontSizeSpn.value;
-    property alias fontSizeUnit: fontSizeUnitCmb.comboBoxUnit;
+    property alias fontSize: fontSizeUnitCmb.dataValue;
+    property alias fontSizeUnit: fontSizeUnitCmb.dataUnit;
 
     onPropertiesUpdated: {
         blockSignals = true;
-        fontSize = properties.fontSize.value * fontSizeSpn.multiplier;
-        fontSizeUnit = properties.fontSize.unitType;
-        visible = properties.fontSizeState !== KoSvgTextPropertiesModel.PropertyUnset;
+        fontSizeUnitCmb.dpi = canvasDPI;
+        fontSizeUnitCmb.setTextProperties(properties);
+        fontSizeUnitCmb.setDataValueAndUnit(properties.fontSize.value, properties.fontSize.unitType);
+        propertyState = [properties.fontSizeState];
+        setVisibleFromProperty();
         blockSignals = false;
     }
     onFontSizeChanged: {
         if (!blockSignals) {
-            properties.fontSize.value = fontSize / fontSizeSpn.multiplier;
+            properties.fontSize.value = fontSize;
         }
     }
     onFontSizeUnitChanged: {
-        fontSizeUnitCmb.currentIndex = fontSizeUnitCmb.indexOfValue(fontSizeUnit);
         if (!blockSignals) {
-            properties.fontSize.unitType = fontSizeUnitCmb.comboBoxUnit;
+            properties.fontSize.unitType = fontSizeUnit;
         }
     }
 
@@ -50,7 +54,7 @@ TextPropertyBase {
         }
 
         Label {
-            text: propertyName;
+            text: propertyTitle;
             elide: Text.ElideRight;
             Layout.fillWidth: true;
             font.italic: properties.fontSizeState === KoSvgTextPropertiesModel.PropertyTriState;
@@ -62,15 +66,22 @@ TextPropertyBase {
             Layout.fillWidth: true;
 
             from: 0;
-            to: 999 * multiplier;
+            to: 99999 * multiplier;
             stepSize: 100;
+
+            onValueChanged: fontSizeUnitCmb.userValue = value;
         }
 
         UnitComboBox {
             id: fontSizeUnitCmb;
             spinBoxControl: fontSizeSpn;
             isFontSize: true;
-            Layout.fillWidth: true;
+            isLineHeight: false;
+            percentageReference: properties.resolvedFontSize(true);
+            Layout.preferredWidth: minimumUnitBoxWidth;
+            Layout.maximumWidth: implicitWidth;
+
+            onUserValueChanged: fontSizeSpn.value = userValue;
         }
     }
 }

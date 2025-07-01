@@ -65,7 +65,16 @@ private Q_SLOTS:
     void testUnicodeGraphemeClusters();
 
     void testFontSelectionForText();
-    void testFontStyleSelection();
+
+    void testWWSConverterWeight_data();
+    void testWWSConverterWeight();
+    void testWWSConverterSlant_data();
+    void testWWSConverterSlant();
+    void testWWSConverterWidth_data();
+    void testWWSConverterWidth();
+    void testWWSConverterFamilyNames_data();
+    void testWWSConverterFamilyNames();
+
     void testFontSizeConfiguration();
 
     void testFontSizeRender();
@@ -86,6 +95,12 @@ private Q_SLOTS:
 
     void testTextBaselineAlignment();
 
+    void testFontMetrics_data();
+    void testFontMetrics();
+
+    void testFontRelativeUnits_data();
+    void testFontRelativeUnits();
+
     void testCssShapeParsing();
     void testShapeInsideRender();
 
@@ -102,6 +117,9 @@ private Q_SLOTS:
     void testTextCleanUp();
 
     void testTextRichTextMerge();
+
+    void testBcp47Parsing_data();
+    void testBcp47Parsing();
 };
 
 #endif // TESTSVGTEXT_H

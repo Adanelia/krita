@@ -52,6 +52,11 @@ public:
         ResourceActive,
         /// Whether the current resource's storage is active
         StorageActive,
+        /// Whether the resource is broken (bool)
+        BrokenStatus,
+        /// If resource is "broken", returns a non-empty string explaining why it is
+        /// considered broken. Otherwise returns an empty QVariant.
+        BrokenStatusMessage,
     };
 
     virtual ~KisAbstractResourceModel(){}
@@ -250,6 +255,7 @@ public:
     QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
     bool setData(const QModelIndex &index, const QVariant &value, int role) override;
     Qt::ItemFlags flags(const QModelIndex &index) const override;
+    QHash<int, QByteArray> roleNames() const override;
 
 // Resources API
 
@@ -270,6 +276,8 @@ public:
 private Q_SLOTS:
 
     void storageActiveStateChanged(const QString &location);
+    void storageResynchronized(const QString &storage, bool isBulkResynchronization);
+    void storagesBulkSynchronizationFinished();
 
     /**
      * A special connection for KisResourceLocator, which can import
@@ -343,7 +351,9 @@ public:
 
 private:
 
+    bool prepareQuery();
     bool resetQuery();
+    void closeQuery();
 
     struct Private;
     Private *const d;

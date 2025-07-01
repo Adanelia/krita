@@ -5,7 +5,6 @@
  *  SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QMenu>
@@ -14,6 +13,7 @@
 #include <QWidgetAction>
 #include <QSet>
 #include <QBuffer>
+#include <QActionGroup>
 
 #include <klocalizedstring.h>
 #include <resources/KoAbstractGradient.h>

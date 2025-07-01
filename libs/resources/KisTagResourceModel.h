@@ -53,7 +53,7 @@ public:
 public:
 
     enum Columns {
-        TagId = KisAbstractResourceModel::StorageActive + 1,
+        TagId = KisAbstractResourceModel::BrokenStatusMessage + 1,
         ResourceId,
         Tag,
         Resource,
@@ -89,6 +89,7 @@ private:
 
     QString createQuery(bool onlyAchieve = true, bool returnADbIndexToo = false);
     bool resetQuery();
+    void closeQuery();
 
 
     struct Private;

@@ -6,9 +6,8 @@
  */
 #include "KisTagModel.h"
 
-#include <QtSql>
-#include <QStringList>
-#include <QElapsedTimer>
+#include <QSqlError>
+#include <QSqlQuery>
 
 #include <klocalizedstring.h>
 
@@ -514,6 +513,11 @@ bool KisAllTagsModel::resetQuery()
 
     d->cachedRowCount = -1;
     return r;
+}
+
+void KisAllTagsModel::closeQuery()
+{
+    d->query.clear();
 }
 
 void KisAllTagsModel::addStorage(const QString &location)

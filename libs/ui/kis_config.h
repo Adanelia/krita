@@ -491,8 +491,14 @@ public:
     int lineSmoothingType(bool defaultValue = false) const;
     void setLineSmoothingType(int value);
 
-    qreal lineSmoothingDistance(bool defaultValue = false) const;
-    void setLineSmoothingDistance(qreal value);
+    qreal lineSmoothingDistanceMin(bool defaultValue = false) const;
+    void setLineSmoothingDistanceMin(qreal value);
+
+    qreal lineSmoothingDistanceMax(bool defaultValue = false) const;
+    void setLineSmoothingDistanceMax(qreal value);
+
+    bool lineSmoothingDistanceKeepAspectRatio(bool defaultValue = false) const;
+    void setLineSmoothingDistanceKeepAspectRatio(bool value);
 
     qreal lineSmoothingTailAggressiveness(bool defaultValue = false) const;
     void setLineSmoothingTailAggressiveness(qreal value);
@@ -611,6 +617,9 @@ public:
 
     bool adaptivePlaybackRange(bool defaultValue = false) const;
     void setAdaptivePlaybackRange(bool value);
+
+    bool autoZoomTimelineToPlaybackRange(bool defaultValue = false) const;
+    void setAutoZoomTimelineToPlaybackRange(bool value);
     
     QString ffmpegLocation(bool defaultValue = false) const;
     void setFFMpegLocation(const QString& value);

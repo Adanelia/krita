@@ -5,7 +5,12 @@
  */
 #include "KisResourceCacheDb.h"
 
-#include <QtSql>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QSqlDatabase>
+
+#include <QBuffer>
+#include <QVersionNumber>
 #include <QStandardPaths>
 #include <QDir>
 #include <QDirIterator>
@@ -23,6 +28,8 @@
 #include <kis_debug.h>
 #include <KisUsageLogger.h>
 
+#include <KisSqlQueryLoader.h>
+#include <KisDatabaseTransactionLock.h>
 #include "KisResourceLocator.h"
 #include "KisResourceLoaderRegistry.h"
 
@@ -32,9 +39,11 @@
 #include <KisCppQuirks.h>
 
 const QString dbDriver = "QSQLITE";
+const QString METADATA_RESOURCES = "resources";
+const QString METADATA_STORAGES = "storages";
 
 const QString KisResourceCacheDb::resourceCacheDbFilename { "resourcecache.sqlite" };
-const QString KisResourceCacheDb::databaseVersion { "0.0.17" };
+const QString KisResourceCacheDb::databaseVersion { "0.0.18" };
 QStringList KisResourceCacheDb::storageTypes { QStringList() };
 QStringList KisResourceCacheDb::disabledBundles { QStringList() << "Krita_3_Default_Resources.bundle" };
 
@@ -67,51 +76,112 @@ bool updateSchemaVersion()
         QString sql = f.readAll();
         QSqlQuery q;
         if (!q.prepare(sql)) {
-            qWarning() << "Could not prepare the schema information query" << q.lastError() << q.boundValues();
+            warnDbMigration << "Could not prepare the schema information query" << q.lastError() << q.boundValues();
             return false;
         }
         q.addBindValue(KisResourceCacheDb::databaseVersion);
         q.addBindValue(KritaVersionWrapper::versionString());
         q.addBindValue(QDateTime::currentDateTimeUtc().toSecsSinceEpoch());
         if (!q.exec()) {
-            qWarning() << "Could not insert the current version" << q.lastError() << q.boundValues();
+            warnDbMigration << "Could not insert the current version" << q.lastError() << q.boundValues();
             return false;
         }
-        infoResources << "Filled version table";
+
+        infoDbMigration << "Filled version table";
     }
     return true;
 }
 
+QSqlError runUpdateScriptFile(const QString &path, const QString &message)
+{
+    try {
 
+        KisSqlQueryLoader loader(path);
+        loader.exec();
+
+    } catch (const KisSqlQueryLoader::FileException &e) {
+        warnDbMigration.noquote() << "ERROR: Could not execute DB update step:" << message;
+        warnDbMigration.noquote() << "       error" << e.message;
+        warnDbMigration.noquote() << "       file:" << e.filePath;
+        warnDbMigration.noquote() << "       file-error:" << e.fileErrorString;
+        return
+            QSqlError("Error executing SQL",
+                QString("Could not find SQL file %1").arg(e.filePath),
+                QSqlError::StatementError);
+    } catch (const KisSqlQueryLoader::SQLException &e) {
+        warnDbMigration.noquote() << "ERROR: Could not execute DB update step:" << message;
+        warnDbMigration.noquote() << "       error" << e.message;
+        warnDbMigration.noquote() << "       file:" << e.filePath;
+        warnDbMigration.noquote() << "       statement:" << e.statementIndex;
+        warnDbMigration.noquote() << "       sql-error:" << e.sqlError.text();
+        return e.sqlError;
+    }
+
+    infoDbMigration << "Completed DB update step:" << message;
+    return QSqlError();
+}
+
+QSqlError runUpdateScript(const QString &script, const QString &message)
+{
+    try {
+
+        KisSqlQueryLoader loader("", script);
+        loader.exec();
+
+    } catch (const KisSqlQueryLoader::SQLException &e) {
+        warnDbMigration.noquote() << "ERROR: Could execute DB update step:" << message;
+        warnDbMigration.noquote() << "       error" << e.message;
+        warnDbMigration.noquote() << "       sql-error:" << e.sqlError.text();
+        return e.sqlError;
+    }
+
+    infoDbMigration << "Completed DB update step:" << message;
+    return QSqlError();
+}
 
 QSqlError createDatabase(const QString &location)
 {
     // NOTE: if the id's of Unknown and Memory in the database
     //       will change, and that will break the queries that
     //       remove Unknown and Memory storages on start-up.
-    KisResourceCacheDb::storageTypes << KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(1))
-                                     << KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(2))
-                                     << KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(3))
-                                     << KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(4))
-                                     << KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(5))
-                                     << KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(6))
-                                     ;
-
-    if (!QSqlDatabase::connectionNames().isEmpty()) {
-        return QSqlError();
-    }
+    KisResourceCacheDb::storageTypes = QStringList {
+        KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(1)),
+        KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(2)),
+        KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(3)),
+        KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(4)),
+        KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(5)),
+        KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(6)),
+        KisResourceStorage::storageTypeToUntranslatedString(KisResourceStorage::StorageType(7))};
 
     QDir dbLocation(location);
     if (!dbLocation.exists()) {
         dbLocation.mkpath(dbLocation.path());
     }
 
-    QSqlDatabase db = QSqlDatabase::addDatabase(dbDriver);
-    db.setDatabaseName(location + "/" + KisResourceCacheDb::resourceCacheDbFilename);
+    std::optional<QSqlDatabase> existingDatabase =
+        QSqlDatabase::database(QSqlDatabase::defaultConnection, false);
 
-    if (!db.open()) {
-        qWarning() << "Could not connect to resource cache database";
-        return db.lastError();
+    const bool databaseConnectionExists = !QSqlDatabase::connectionNames().isEmpty()
+        && existingDatabase->isValid() && existingDatabase->isOpen();
+
+    if (databaseConnectionExists && existingDatabase->tables().contains("version_information")) {
+        return QSqlError();
+    }
+
+    existingDatabase = std::nullopt;
+
+    QSqlDatabase db;
+
+    if (!databaseConnectionExists) {
+        db = QSqlDatabase::addDatabase(dbDriver);
+        db.setDatabaseName(location + "/" + KisResourceCacheDb::resourceCacheDbFilename);
+
+        if (!db.open()) {
+            warnDbMigration << "Could not connect to resource cache database";
+            return db.lastError();
+        }
+    } else {
+        db = QSqlDatabase::database();
     }
 
     // will be filled correctly later
@@ -151,100 +221,128 @@ QSqlError createDatabase(const QString &location)
         if (dbTables.contains("version_information")) {
             // Verify the version number
 
-            QSqlQuery q("SELECT database_version\n"
-                        ",      krita_version\n"
-                        ",      creation_date\n"
-                        "FROM version_information\n"
-                        "ORDER BY id\n"
-                        "DESC\n"
-                        "LIMIT 1;\n");
+            {
+                QSqlQuery q(
+                    "SELECT database_version\n"
+                    ",      krita_version\n"
+                    ",      creation_date\n"
+                    "FROM version_information\n"
+                    "ORDER BY id\n"
+                    "DESC\n"
+                    "LIMIT 1;\n");
 
-            if (!q.exec()) {
-                qWarning() << "Could not retrieve version information from the database." << q.lastError();
-                abort();
+                if (!q.exec()) {
+                    warnDbMigration << "Could not retrieve version information from the database." << q.lastError();
+                    abort();
+                }
+                q.first();
+                schemaVersion = q.value(0).toString();
+                kritaVersion = q.value(1).toString();
+                creationDate = q.value(2).toInt();
             }
-            q.first();
-            schemaVersion = q.value(0).toString();
-            kritaVersion = q.value(1).toString();
-            creationDate = q.value(2).toInt();
 
             oldSchemaVersionNumber = QVersionNumber::fromString(schemaVersion);
             newSchemaVersionNumber = QVersionNumber::fromString(KisResourceCacheDb::databaseVersion);
 
             if (QVersionNumber::compare(oldSchemaVersionNumber, newSchemaVersionNumber) != 0) {
 
-                qWarning() << "Old schema:" << schemaVersion << "New schema:" << newSchemaVersionNumber;
+                infoDbMigration << "Old schema:" << schemaVersion << "New schema:" << newSchemaVersionNumber;
 
                 schemaIsOutDated = true;
                 KisBackup::numberedBackupFile(location + "/" + KisResourceCacheDb::resourceCacheDbFilename);
 
-                if (newSchemaVersionNumber == QVersionNumber::fromString("0.0.17")
-                        && QVersionNumber::compare(oldSchemaVersionNumber, QVersionNumber::fromString("0.0.14")) > 0
-                        && QVersionNumber::compare(oldSchemaVersionNumber, QVersionNumber::fromString("0.0.17")) < 0) {
+                if (newSchemaVersionNumber == QVersionNumber::fromString("0.0.18")
+                        && QVersionNumber::compare(oldSchemaVersionNumber, QVersionNumber::fromString("0.0.14")) >= 0
+                        && QVersionNumber::compare(oldSchemaVersionNumber, QVersionNumber::fromString("0.0.18")) < 0) {
+
                     bool from14to15 = oldSchemaVersionNumber == QVersionNumber::fromString("0.0.14");
+
                     bool from15to16 = oldSchemaVersionNumber == QVersionNumber::fromString("0.0.14")
                             || oldSchemaVersionNumber == QVersionNumber::fromString("0.0.15");
+
                     bool from16to17 = oldSchemaVersionNumber == QVersionNumber::fromString("0.0.14")
                             || oldSchemaVersionNumber == QVersionNumber::fromString("0.0.15")
                             || oldSchemaVersionNumber == QVersionNumber::fromString("0.0.16");
 
+                    bool from17to18 = oldSchemaVersionNumber == QVersionNumber::fromString("0.0.14")
+                            || oldSchemaVersionNumber == QVersionNumber::fromString("0.0.15")
+                            || oldSchemaVersionNumber == QVersionNumber::fromString("0.0.16")
+                            || oldSchemaVersionNumber == QVersionNumber::fromString("0.0.17");
+
+                    KisDatabaseTransactionLock transactionLock(QSqlDatabase::database());
+
                     bool success = true;
                     if (from14to15) {
-                        qWarning() << "Going to update resource_tags table";
-
-                        QSqlQuery q;
-                        q.prepare("ALTER TABLE  resource_tags\n"
-                                  "ADD   COLUMN active INTEGER NOT NULL DEFAULT 1");
-                        if (!q.exec()) {
-                            qWarning() << "Could not update the resource_tags table." << q.lastError();
+                        QSqlError error = runUpdateScript(
+                            "ALTER TABLE  resource_tags\n"
+                            "ADD   COLUMN active INTEGER NOT NULL DEFAULT 1", 
+                            "Update resource tags table (add \'active\' column)");
+                        if (error.type() != QSqlError::NoError) {
                             success = false;
                         }
-                        else {
-                            qWarning() << "Updated table resource_tags: success.";
-                        }
                     }
-                    if (from15to16) {
-                        qWarning() << "Going to update indices";
+                    if (success && from15to16) {
+                        infoDbMigration << "Going to update indices";
 
                         QStringList indexes = QStringList() << "tags" << "resources" << "tag_translations" << "resource_tags";
 
                         Q_FOREACH(const QString &index, indexes) {
-                            QFile f(":/create_index_" + index + ".sql");
-                            if (f.open(QFile::ReadOnly)) {
-                                QSqlQuery q;
-                                if (!q.exec(f.readAll())) {
-                                    qWarning() << "Could not create index" << index << q.lastError();
-                                    return db.lastError();
-                                }
-                                infoResources << "Created index" << index;
-                            }
-                            else {
-                                return QSqlError("Error executing SQL", QString("Could not find SQL file %1").arg(index), QSqlError::StatementError);
+                            QSqlError error = runUpdateScriptFile(":/create_index_" + index + ".sql",
+                                                                  QString("Create index for %1").arg(index));
+                            if (error.type() != QSqlError::NoError) {
+                                success = false;
                             }
                         }
                     }
 
-                    if (from16to17) {
-                        qWarning() << "Going to update resource signature index";
-
-                        QFile f(":/create_index_resources_signature.sql");
-                        if (f.open(QFile::ReadOnly)) {
-                            QSqlQuery q;
-                            if (!q.exec(f.readAll())) {
-                                qWarning() << "Could not create index for resources signature" << q.lastError();
-                                return db.lastError();
-                            }
-                            infoResources << "Created resources signature index";
+                    if (success && from16to17) {
+                        QSqlError error = runUpdateScriptFile(":/create_index_resources_signature.sql",
+                                                              "Create index for resources_signature");
+                        if (error.type() != QSqlError::NoError) {
+                            success = false;
                         }
-                        else {
-                            return QSqlError("Error executing SQL", QString("Could not find SQL file for resources signature index"), QSqlError::StatementError);
+                    }
+
+                    if (success && from17to18) {
+                        {
+                            QSqlError error = runUpdateScriptFile(":/0_0_18_0001_cleanup_metadata_table.sql",
+                                                                  "Cleanup and deduplicate metadata table");
+                            if (error.type() != QSqlError::NoError) {
+                                success = false;
+                            }
+                        }
+                        if (success) {
+                            QSqlError error = runUpdateScriptFile(":/0_0_18_0002_update_metadata_table_constraints.sql",
+                                                                  "Update metadata table constraints");
+                            if (error.type() != QSqlError::NoError) {
+                                success = false;
+                            }
+                        }
+                        if (success) {
+                            QSqlError error = runUpdateScriptFile(":/create_index_metadata_key.sql",
+                                                                  "Create index for metadata_key");
+                            if (error.type() != QSqlError::NoError) {
+                                success = false;
+                            }
                         }
                     }
 
                     if (success) {
                         if (!updateSchemaVersion()) {
-                            return QSqlError("Error executing SQL", QString("Could not update schema version."), QSqlError::StatementError);
+                            success = false;
                         }
+
+                        transactionLock.commit();
+
+                        if (success) {
+                            QSqlError error = runUpdateScript("VACUUM",
+                                                              "Vacuum database after updating schema");
+                            if (error.type() != QSqlError::NoError) {
+                                success = false;
+                            }
+                        }
+                    } else {
+                        transactionLock.rollback();
                     }
 
                     schemaIsOutDated = !success;
@@ -269,6 +367,11 @@ QSqlError createDatabase(const QString &location)
                                 .arg(schemaVersion)
                                 .arg(kritaVersion)
                                 .arg(QDateTime::fromSecsSinceEpoch(creationDate).toString()));
+
+            /// initialization is completed, transaction is over,
+            /// now enable the foreign_keys constraint if necessary
+            KisResourceCacheDb::synchronizeForeignKeysState();
+
             return QSqlError();
         }
     }
@@ -277,19 +380,24 @@ QSqlError createDatabase(const QString &location)
                         .arg(oldSchemaVersionNumber.toString().isEmpty() ? QString("database didn't exist") : ("old schema version: " + oldSchemaVersionNumber.toString()))
                         .arg("new schema version: " + newSchemaVersionNumber.toString()));
 
+    KisDatabaseTransactionLock transactionLock(QSqlDatabase::database());
+
     // Create tables
     Q_FOREACH(const QString &table, tables) {
-        QFile f(":/create_" + table + ".sql");
-        if (f.open(QFile::ReadOnly)) {
-            QSqlQuery q;
-            if (!q.exec(f.readAll())) {
-                qWarning() << "Could not create table" << table << q.lastError();
-                return db.lastError();
-            }
-            infoResources << "Created table" << table;
+        QSqlError error =
+            runUpdateScriptFile(":/create_" + table + ".sql", QString("Create table %1").arg(table));
+        if (error.type() != QSqlError::NoError) {
+            return error;
         }
-        else {
-            return QSqlError("Error executing SQL", QString("Could not find SQL file %1").arg(table), QSqlError::StatementError);
+    }
+
+    {
+        // metadata table constraints were updated in version 0.0.18
+        QSqlError error = runUpdateScriptFile(":/0_0_18_0002_update_metadata_table_constraints.sql",
+                                              "Update metadata table constraints");
+
+        if (error.type() != QSqlError::NoError) {
+            return error;
         }
     }
 
@@ -299,45 +407,36 @@ QSqlError createDatabase(const QString &location)
     // these indexes came in version 0.0.16
     indexes << "storages" << "versioned_resources" << "tags" << "resources" << "tag_translations" << "resource_tags";
 
-    // this indexes came in version 0.0.17
+    // this index came in version 0.0.17
     indexes << "resources_signature";
 
+    // this index came in version 0.0.18
+    indexes << "metadata_key";
+
     Q_FOREACH(const QString &index, indexes) {
-        QFile f(":/create_index_" + index + ".sql");
-        if (f.open(QFile::ReadOnly)) {
-            QSqlQuery q;
-            if (!q.exec(f.readAll())) {
-                qWarning() << "Could not create index" << index;
-                return db.lastError();
-            }
-            infoResources << "Created table" << index;
-        }
-        else {
-            return QSqlError("Error executing SQL", QString("Could not find SQL file %1").arg(index), QSqlError::StatementError);
+        QSqlError error = runUpdateScriptFile(":/create_index_" + index + ".sql",
+                                              QString("Create index for %1").arg(index));
+        if (error.type() != QSqlError::NoError) {
+            return error;
         }
     }
 
     // Fill lookup tables
     {
-        if (dbTables.contains("storage_types")) {
-            QSqlQuery q;
-            if (!q.exec("DELETE FROM storage_types;")) {
-                qWarning() << "Could not clear table storage_types" << db.lastError();
-            }
-        }
-
         QFile f(":/fill_storage_types.sql");
         if (f.open(QFile::ReadOnly)) {
             QString sql = f.readAll();
             Q_FOREACH(const QString &originType, KisResourceCacheDb::storageTypes) {
+                const QString updateStep = QString("Register storage type: %1").arg(originType);
                 QSqlQuery q(sql);
                 q.addBindValue(originType);
                 if (!q.exec()) {
-                    qWarning() << "Could not insert" << originType << db.lastError() << q.executedQuery();
+                    warnDbMigration << "Could execute DB update step:" << updateStep << q.lastError();
+                    warnDbMigration << "    faulty statement:" << sql;
                     return db.lastError();
                 }
+                infoDbMigration << "Completed DB update step:" << updateStep;
             }
-            infoResources << "Filled lookup table storage_types";
         }
         else {
             return QSqlError("Error executing SQL", QString("Could not find SQL fill_storage_types.sql."), QSqlError::StatementError);
@@ -345,24 +444,20 @@ QSqlError createDatabase(const QString &location)
     }
 
     {
-        if (dbTables.contains("resource_types")) {
-            QSqlQuery q;
-            if (!q.exec("DELETE FROM resource_types;")) {
-                qWarning() << "Could not clear table resource_types" << db.lastError();
-            }
-        }
         QFile f(":/fill_resource_types.sql");
         if (f.open(QFile::ReadOnly)) {
             QString sql = f.readAll();
             Q_FOREACH(const QString &resourceType, KisResourceLoaderRegistry::instance()->resourceTypes()) {
+                const QString updateStep = QString("Register resource type: %1").arg(resourceType);
                 QSqlQuery q(sql);
                 q.addBindValue(resourceType);
                 if (!q.exec()) {
-                    qWarning() << "Could not insert" << resourceType << db.lastError() << q.executedQuery();
+                    warnDbMigration << "Could execute DB update step:" << updateStep << q.lastError();
+                    warnDbMigration << "    faulty statement:" << sql;
                     return db.lastError();
                 }
+                infoDbMigration << "Completed DB update step:" << updateStep;
             }
-            infoResources << "Filled lookup table resource_types";
         }
         else {
             return QSqlError("Error executing SQL", QString("Could not find SQL fill_resource_types.sql."), QSqlError::StatementError);
@@ -372,6 +467,12 @@ QSqlError createDatabase(const QString &location)
     if (!updateSchemaVersion()) {
        return QSqlError("Error executing SQL", QString("Could not update schema version."), QSqlError::StatementError);
     }
+
+    transactionLock.commit();
+
+    /// initialization is completed, transaction is over,
+    /// now enable the foreign_keys constraint if necessary
+    KisResourceCacheDb::synchronizeForeignKeysState();
 
     return QSqlError();
 }
@@ -727,6 +828,7 @@ bool KisResourceCacheDb::updateResourceTableForResourceIfNeeded(int resourceId, 
         KIS_SAFE_ASSERT_RECOVER_RETURN_VALUE(resource, false);
         resource->setVersion(maxVersion);
         resource->setMD5Sum(storage->resourceMd5(url));
+        resource->setStorageLocation(storage->location());
         r = makeResourceTheCurrentVersion(resourceId, resource);
     }
 
@@ -766,6 +868,10 @@ bool KisResourceCacheDb::makeResourceTheCurrentVersion(int resourceId, KoResourc
     r = q.exec();
     if (!r) {
         qWarning() << "Could not update resource" << q.boundValues() << q.lastError();
+    }
+
+    if (!resource->metadata().isEmpty()) {
+        return updateMetaDataForId(resource->metadata(), resourceId, METADATA_RESOURCES);
     }
 
     return r;
@@ -825,6 +931,26 @@ bool KisResourceCacheDb::removeResourceCompletely(int resourceId)
         r = q.exec();
         if (!r) {
             qWarning() << "Could not execute removeResourceCompletely3 statement" << q.lastError() << resourceId;
+            return r;
+        }
+    }
+
+    {
+        QSqlQuery q;
+        r = q.prepare("DELETE FROM metadata \n"
+                      "WHERE foreign_id = :resource_id\n"
+                      "AND    table_name = :table;");
+
+        if (!r) {
+            qWarning() << "Could not prepare removeResourceCompletely4 statement" << q.lastError();
+            return r;
+        }
+
+        q.bindValue(":resource_id", resourceId);
+        q.bindValue(":table", METADATA_RESOURCES);
+        r = q.exec();
+        if (!r) {
+            qWarning() << "Could not execute removeResourceCompletely4 statement" << q.lastError() << resourceId;
             return r;
         }
     }
@@ -1046,7 +1172,7 @@ bool KisResourceCacheDb::addResource(KisResourceStorageSP storage, QDateTime tim
     }
 
     if (!resource->metadata().isEmpty()) {
-        return addMetaDataForId(resource->metadata(), resource->resourceId(), "resources");
+        return updateMetaDataForId(resource->metadata(), resource->resourceId(), METADATA_RESOURCES);
     }
 
     return true;
@@ -1414,6 +1540,46 @@ bool KisResourceCacheDb::addTags(KisResourceStorageSP storage, QString resourceT
     return true;
 }
 
+bool KisResourceCacheDb::registerStorageType(const KisResourceStorage::StorageType storageType)
+{
+    // Check whether the type already exists
+    const QString name = KisResourceStorage::storageTypeToUntranslatedString(storageType);
+
+    {
+        QSqlQuery q;
+        if (!q.prepare("SELECT count(*)\n"
+                       "FROM   storage_types\n"
+                       "WHERE  name = :storage_type\n")) {
+            qWarning() << "Could not prepare select from storage_types query" << q.lastError();
+            return false;
+        }
+        q.bindValue(":storage_type", name);
+        if (!q.exec()) {
+            qWarning() << "Could not execute select from storage_types query" << q.lastError();
+            return false;
+        }
+        q.first();
+        int rowCount = q.value(0).toInt();
+        if (rowCount > 0) {
+            return true;
+        }
+    }
+    // if not, add it
+    QFile f(":/fill_storage_types.sql");
+    if (f.open(QFile::ReadOnly)) {
+        QString sql = f.readAll();
+        QSqlQuery q(sql);
+        q.addBindValue(name);
+        if (!q.exec()) {
+            qWarning() << "Could not insert" << name << q.lastError();
+            return false;
+        }
+        return true;
+    }
+    qWarning() << "Could not open fill_storage_types.sql";
+    return false;
+}
+
 bool KisResourceCacheDb::addStorage(KisResourceStorageSP storage, bool preinstalled)
 {
     bool r = true;
@@ -1452,8 +1618,11 @@ bool KisResourceCacheDb::addStorage(KisResourceStorageSP storage, bool preinstal
             return r;
         }
 
+        const QString sanitizedStorageLocation =
+            changeToEmptyIfNull(KisResourceLocator::instance()->makeStorageLocationRelative(storage->location()));
+
         q.bindValue(":storage_type_id", static_cast<int>(storage->type()));
-        q.bindValue(":location", changeToEmptyIfNull(KisResourceLocator::instance()->makeStorageLocationRelative(storage->location())));
+        q.bindValue(":location", sanitizedStorageLocation);
         q.bindValue(":timestamp", storage->timestamp().toSecsSinceEpoch());
         q.bindValue(":pre_installed", preinstalled ? 1 : 0);
         q.bindValue(":active", !disabledBundles.contains(storage->name()));
@@ -1468,25 +1637,28 @@ bool KisResourceCacheDb::addStorage(KisResourceStorageSP storage, bool preinstal
 
         if (!r) qWarning() << "Could not execute query" << q.lastError();
 
+        if (!q.prepare("SELECT id\n"
+                       "FROM   storages\n"
+                       "WHERE  location = :location\n")) {
+            qWarning() << "Could not prepare storage id statement" << q.lastError();
+        }
+
+        q.bindValue(":location", sanitizedStorageLocation);
+        if (!q.exec()) {
+            qWarning() << "Could not execute storage id statement" << q.boundValues() << q.lastError();
+        }
+
+        if (!q.first()) {
+            qWarning() << "Could not find id for the newly added storage" << q.lastError();
+        } else {
+            storage->setStorageId(q.value("id").toInt());
+        }
     }
 
     // Insert the metadata
     {
         QStringList keys = storage->metaDataKeys();
-        if (keys.size() > 0) {
-
-            QSqlQuery q;
-            if (!q.prepare("SELECT MAX(id)\n"
-                           "FROM   storages\n")) {
-                qWarning() << "Could not create select storages query for metadata" << q.lastError();
-            }
-
-            if (!q.exec()) {
-                qWarning() << "Could not execute select storages query for metadata" << q.lastError();
-            }
-
-            q.first();
-            int id = q.value(0).toInt();
+        if (keys.size() > 0 && storage->storageId() >= 0) {
 
             QMap<QString, QVariant> metadata;
 
@@ -1494,7 +1666,7 @@ bool KisResourceCacheDb::addStorage(KisResourceStorageSP storage, bool preinstal
                 metadata[key] = storage->metaData(key);
             }
 
-            addMetaDataForId(metadata, id, "storages");
+            updateMetaDataForId(metadata, storage->storageId(), METADATA_STORAGES);
         }
     }
 
@@ -1524,91 +1696,112 @@ bool KisResourceCacheDb::addStorageTags(KisResourceStorageSP storage)
 bool KisResourceCacheDb::deleteStorage(QString location)
 {
     // location is already relative
-    {
-        QSqlQuery q;
-        if (!q.prepare("DELETE FROM resources\n"
-                       "WHERE       id IN (SELECT versioned_resources.resource_id\n"
-                       "                   FROM   versioned_resources\n"
-                       "                   WHERE  versioned_resources.storage_id = (SELECT storages.id\n"
-                       "                                                            FROM   storages\n"
-                       "                                                            WHERE storages.location = :location)\n"
-                       "                   );")) {
-            qWarning() << "Could not prepare delete resources query in deleteStorage" << q.lastError();
-            return false;
+
+    try {
+        KisDatabaseTransactionLock transactionLock(QSqlDatabase::database());
+
+        {
+            KisSqlQueryLoader loader(":/sql/delete_versioned_resources_for_storage_indirect.sql",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":location", changeToEmptyIfNull(location));
+            loader.exec();
         }
-        q.bindValue(":location", changeToEmptyIfNull(location));
-        if (!q.exec()) {
-            qWarning() << "Could not execute delete resources query in deleteStorage" << q.lastError();
-            return false;
+
+        {
+            KisSqlQueryLoader loader(":/sql/delete_versioned_resources_for_storage_direct.sql",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":location", changeToEmptyIfNull(location));
+            loader.exec();
+            if (loader.query().numRowsAffected() > 0) {
+                qWarning() << "WARNING: deleteStorage: versioned_resurces table contained resource versions not being "
+                              "present in the main table. Deleted: "
+                           << loader.query().numRowsAffected();
+            }
         }
+
+        {
+            KisSqlQueryLoader loader(":/sql/delete_resource_metadata_for_storage.sql",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":location", changeToEmptyIfNull(location));
+            loader.query().bindValue(":table", METADATA_RESOURCES);
+            loader.exec();
+        }
+
+        {
+            KisSqlQueryLoader loader("inline://delete_current_resources_for_storage",
+                                     "DELETE FROM resources\n"
+                                     "WHERE storage_id = (SELECT storages.id\n"
+                                     "                    FROM   storages\n"
+                                     "                    WHERE storages.location = :location)\n",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":location", changeToEmptyIfNull(location));
+            loader.exec();
+        }
+
+        {
+            KisSqlQueryLoader loader("inline://delete_tags_for_storage",
+                                     "DELETE FROM tags \n"
+                                     "WHERE id IN (SELECT tags_storages.tag_id \n "
+                                     "             FROM tags_storages \n"
+                                     "             WHERE tags_storages.storage_id = \n"
+                                     "                   (SELECT storages.id\n"
+                                     "                    FROM   storages\n"
+                                     "                    WHERE  storages.location = :location)\n"
+                                     "            )",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":location", changeToEmptyIfNull(location));
+            loader.exec();
+        }
+
+        {
+            KisSqlQueryLoader loader("inline://delete_tags_storage_links_for_storage",
+                                     "DELETE FROM tags_storages \n"
+                                     "WHERE tags_storages.storage_id = \n"
+                                     "      (SELECT storages.id\n"
+                                     "       FROM   storages\n"
+                                     "       WHERE  storages.location = :location)",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":location", changeToEmptyIfNull(location));
+            loader.exec();
+        }
+
+        {
+            KisSqlQueryLoader loader("inline://delete_starage_metadata_for_storage",
+                                     "DELETE FROM metadata\n"
+                                     "WHERE foreign_id = (SELECT storages.id\n"
+                                     "                    FROM   storages\n"
+                                     "                    WHERE  storages.location = :location)"
+                                     "AND table_name = :table;",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":location", changeToEmptyIfNull(location));
+            loader.query().bindValue(":table", METADATA_STORAGES);
+            loader.exec();
+        }
+
+        {
+            KisSqlQueryLoader loader("inline://delete_storage",
+                                     "DELETE FROM storages\n"
+                                     "WHERE location = :location;",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":location", changeToEmptyIfNull(location));
+            loader.exec();
+        }
+
+        transactionLock.commit();
+
+    } catch (const KisSqlQueryLoader::FileException &e) {
+        qWarning().noquote() << "ERROR: deleteStorage:" << e.message;
+        qWarning().noquote() << "       file:" << e.filePath;
+        qWarning().noquote() << "       error:" << e.fileErrorString;
+        return false;
+    } catch (const KisSqlQueryLoader::SQLException &e) {
+        qWarning().noquote() << "ERROR: deleteStorage:" << e.message;
+        qWarning().noquote() << "       file:" << e.filePath;
+        qWarning().noquote() << "       statement:" << e.statementIndex;
+        qWarning().noquote() << "       error:" << e.sqlError.text();
+        return false;
     }
 
-    {
-        QSqlQuery q;
-        if (!q.prepare("DELETE FROM tags \n"
-                       "WHERE id IN (SELECT tags_storages.tag_id \n "
-                       "             FROM tags_storages \n"
-                       "             WHERE tags_storages.storage_id = \n"
-                       "                   (SELECT storages.id\n"
-                       "                    FROM   storages\n"
-                       "                    WHERE  storages.location = :location)\n"
-                       "           );")) {
-            qWarning() << "Could not prepare delete tag query" << q.lastError();
-            return false;
-        }
-        q.bindValue(":location", location);
-        if (!q.exec()) {
-            qWarning() << "Could not execute delete tag query" << q.lastError();
-            return false;
-        }
-    }
-
-    {
-        QSqlQuery q;
-        if (!q.prepare("DELETE FROM tags_storages \n"
-                       "       WHERE tags_storages.storage_id = \n"
-                       "             (SELECT storages.id\n"
-                       "              FROM   storages\n"
-                       "              WHERE  storages.location = :location);")) {
-            qWarning() << "Could not prepare delete tag storage query" << q.lastError();
-            return false;
-        }
-        q.bindValue(":location", location);
-        if (!q.exec()) {
-            qWarning() << "Could not execute delete tag storage query" << q.lastError();
-            return false;
-        }
-    }
-
-    {
-        QSqlQuery q;
-        if (!q.prepare("DELETE FROM versioned_resources\n"
-                       "WHERE storage_id = (SELECT storages.id\n"
-                       "                    FROM   storages\n"
-                       "                    WHERE  storages.location = :location);")) {
-            qWarning() << "Could not prepare delete versioned_resources query" << q.lastError();
-            return false;
-        }
-        q.bindValue(":location", changeToEmptyIfNull(location));
-        if (!q.exec()) {
-            qWarning() << "Could not execute delete versioned_resources query" << q.lastError();
-            return false;
-        }
-    }
-
-    {
-        QSqlQuery q;
-        if (!q.prepare("DELETE FROM storages\n"
-                       "WHERE location = :location;")) {
-            qWarning() << "Could not prepare delete storages query" << q.lastError();
-            return false;
-        }
-        q.bindValue(":location", changeToEmptyIfNull(location));
-        if (!q.exec()) {
-            qWarning() << "Could not execute delete storages query" << q.lastError();
-            return false;
-        }
-    }
     return true;
 }
 
@@ -1657,8 +1850,6 @@ bool KisResourceCacheDb::synchronizeStorage(KisResourceStorageSP storage)
     QElapsedTimer t;
     t.start();
 
-    QSqlDatabase::database().transaction();
-
     if (!s_valid) {
         qWarning() << "KisResourceCacheDb::addResource: The database is not valid";
         return false;
@@ -1688,10 +1879,13 @@ bool KisResourceCacheDb::synchronizeStorage(KisResourceStorageSP storage)
             qWarning() << "Could not add new storage" << storage->name() << "to the database";
             success = false;
         }
-        return true;
+        return success;
     }
 
     storage->setStorageId(q.value("id").toInt());
+
+    /// Start the transaction that will add all the resources
+    QSqlDatabase::database().transaction();
 
     /// We compare resource versions one-by-one because the storage may have multiple
     /// versions of them
@@ -1928,72 +2122,183 @@ bool KisResourceCacheDb::synchronizeStorage(KisResourceStorageSP storage)
 
 void KisResourceCacheDb::deleteTemporaryResources()
 {
-    QSqlDatabase::database().transaction();
+    try {
+        KisDatabaseTransactionLock transactionLock(QSqlDatabase::database());
 
+        /**
+         * Remove all temporary resources
+         */
+        {
+            KisSqlQueryLoader loader(
+                "inline://delete_metadata_for_resources_in_memory_storages",
+                "DELETE FROM metadata\n"
+                "WHERE foreign_id IN (SELECT id\n"
+                "                     FROM resources\n"
+                "                     WHERE storage_id in (SELECT id\n"
+                "                                          FROM storages\n"
+                "                                          WHERE  storage_type_id == :storage_type))\n"
+                "AND   table_name = :table",
+                KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":table", METADATA_RESOURCES);
+            loader.query().bindValue(":storage_type", (int)KisResourceStorage::StorageType::Memory);
+            loader.exec();
+        }
+
+        {
+            KisSqlQueryLoader loader("inline://delete_metadata_for_temporary_resources",
+                                     "DELETE FROM metadata\n"
+                                     "WHERE foreign_id IN (SELECT id\n"
+                                     "                     FROM   resources\n"
+                                     "                     WHERE temporary = 1)\n"
+                                     "AND   table_name = :table",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":table", METADATA_RESOURCES);
+            loader.exec();
+        }
+
+        {
+            KisSqlQueryLoader loader("inline://delete_versions_of_resources_in_temporary_storages",
+                                     "DELETE FROM versioned_resources\n"
+                                     "WHERE  storage_id in (SELECT id\n"
+                                     "                      FROM   storages\n"
+                                     "                      WHERE  storage_type_id == :storage_type)",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":storage_type", (int)KisResourceStorage::StorageType::Memory);
+            loader.exec();
+        }
+
+        {
+            KisSqlQueryLoader loader("inline://delete_versions_of_temporary_resources",
+                                     "DELETE FROM versioned_resources\n"
+                                     "WHERE resource_id IN (SELECT id FROM resources\n"
+                                     "                      WHERE  temporary = 1)",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.exec();
+        }
+
+        {
+            KisSqlQueryLoader loader("inline://delete_current_resources_in_temporary_storages",
+                                     "DELETE FROM resources\n"
+                                     "WHERE  storage_id in (SELECT id\n"
+                                     "                      FROM   storages\n"
+                                     "                      WHERE  storage_type_id  == :storage_type)",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":storage_type", (int)KisResourceStorage::StorageType::Memory);
+            loader.exec();
+        }
+
+        {
+            KisSqlQueryLoader loader("inline://delete_current_temporary_resources",
+                                     "DELETE FROM resources\n"
+                                     "WHERE  temporary = 1",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.exec();
+        }
+
+        /**
+         * Remove all temporary storages
+         */
+
+        {
+            KisSqlQueryLoader loader("inline://delete_metadata_for_temporary_storages",
+                                     "DELETE FROM metadata\n"
+                                     "WHERE foreign_id IN (SELECT id\n"
+                                     "                     FROM   storages\n"
+                                     "                     WHERE  storage_type_id  == :storage_type)\n"
+                                     "AND   table_name = :table;",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":storage_type", (int)KisResourceStorage::StorageType::Memory);
+            loader.query().bindValue(":table", METADATA_STORAGES);
+            loader.exec();
+        }
+
+        {
+            KisSqlQueryLoader loader("inline://delete_temporary_storages",
+                                     "DELETE FROM storages\n"
+                                     "WHERE  storage_type_id  == :storage_type\n",
+                                     KisSqlQueryLoader::single_statement_mode);
+            loader.query().bindValue(":storage_type", (int)KisResourceStorage::StorageType::Memory);
+            loader.exec();
+        }
+
+        transactionLock.commit();
+    } catch (const KisSqlQueryLoader::SQLException &e) {
+        qWarning().noquote() << "ERROR: failed to execute query:" << e.message;
+        qWarning().noquote() << "       file:" << e.filePath;
+        qWarning().noquote() << "       statement:" << e.statementIndex;
+        qWarning().noquote() << "       error:" << e.sqlError.text();
+    }
+}
+
+void KisResourceCacheDb::performHouseKeepingOnExit()
+{
     QSqlQuery q;
 
-    if (!q.prepare("DELETE FROM versioned_resources\n"
-                   "WHERE  storage_id in (SELECT id\n"
-                   "                      FROM   storages\n"
-                   "                      WHERE  storage_type_id == :storage_type)"))
-    {
-        qWarning() << "Could not prepare delete versioned resources from Unknown or Memory storages query." << q.lastError();
-    }
-
-    q.bindValue(":storage_type", (int)KisResourceStorage::StorageType::Memory);
-
-    if (!q.exec()) {
-        qWarning() << "Could not execute delete versioned resources from Unknown or Memory storages query." << q.lastError();
-    }
-
-    if (!q.prepare("DELETE FROM resources\n"
-                   "WHERE  storage_id in (SELECT id\n"
-                   "                      FROM   storages\n"
-                   "                      WHERE  storage_type_id  == :storage_type)"))
-    {
-        qWarning() << "Could not prepare delete resources from Unknown or Memory storages query." << q.lastError();
-    }
-
-    q.bindValue(":storage_type", (int)KisResourceStorage::StorageType::Memory);
-
-    if (!q.exec()) {
-        qWarning() << "Could not execute delete resources from Unknown or Memory storages query." << q.lastError();
-    }
-
-
-    if (!q.prepare("DELETE FROM versioned_resources\n"
-                   "WHERE resource_id IN (SELECT id FROM resources\n"
-                   "                      WHERE  temporary = 1)")) {
-        qWarning() << "Could not prepare delete temporary versioned resources query." << q.lastError();
+    if (!q.prepare("PRAGMA optimize;")) {
+        qWarning() << "Could not prepare query" << q.lastQuery() << q.lastError();
     }
 
     if (!q.exec()) {
-        qWarning() << "Could not execute delete temporary versioned resources query." << q.lastError();
+        qWarning() << "Could not execute query" << q.lastQuery() << q.lastError();
+    }
+}
+
+void KisResourceCacheDb::setForeignKeysStateImpl(bool isEnabled)
+{
+    KisSqlQueryLoader loader("inline://set_foreign_keys_state",
+                             QString("PRAGMA foreign_keys = %1").arg(isEnabled ? "ON" : "OFF"));
+    loader.exec();
+}
+
+bool KisResourceCacheDb::getForeignKeysStateImpl()
+{
+    KisSqlQueryLoader loader("inline://get_foreign_keys_state",
+                             "PRAGMA foreign_keys");
+
+    loader.exec();
+
+    if (loader.query().first()) {
+        return loader.query().value(0).toInt();
     }
 
-    if (!q.prepare("DELETE FROM resources\n"
-                   "WHERE  temporary = 1")) {
-        qWarning() << "Could not prepare delete temporary resources query." << q.lastError();
-        return;
+    return false;
+}
+
+void KisResourceCacheDb::synchronizeForeignKeysState()
+{
+#ifdef KRITA_STABLE
+    bool useForeignKeys = false;
+    KisUsageLogger::log("INFO: detected stable build of Krita, foreign_keys constraint will be disabled");
+#else
+    bool useForeignKeys = true;
+    KisUsageLogger::log("INFO: detected unstable build of Krita, foreign_keys constraint will be enabled");
+#endif
+
+    if (qEnvironmentVariableIsSet("KRITA_OVERRIDE_USE_FOREIGN_KEYS")) {
+        useForeignKeys = qEnvironmentVariableIntValue("KRITA_OVERRIDE_USE_FOREIGN_KEYS") > 0;
+        KisUsageLogger::log("INFO: foreign_keys constraint was overridden by KRITA_OVERRIDE_USE_FOREIGN_KEYS: " + QString::number(useForeignKeys));
     }
 
-    if (!q.exec()) {
-        qWarning() << "Could not execute delete temporary resources query." << q.lastError();
+    try {
+        const bool oldForeignKeysState = KisResourceCacheDb::getForeignKeysStateImpl();
+
+        if (oldForeignKeysState != useForeignKeys) {
+            KisUsageLogger::log(
+                "INFO: switch foreign_keys state: " +
+                QString::number(oldForeignKeysState) +
+                " -> " +
+                QString::number(useForeignKeys));
+
+            KisResourceCacheDb::setForeignKeysStateImpl(useForeignKeys);
+        }
+
+    } catch (const KisSqlQueryLoader::SQLException &e) {
+        qWarning().noquote() << "ERROR: failed to execute query:" << e.message;
+        qWarning().noquote() << "       file:" << e.filePath;
+        qWarning().noquote() << "       statement:" << e.statementIndex;
+        qWarning().noquote() << "       error:" << e.sqlError.text();
     }
 
-    if (!q.prepare("DELETE FROM storages\n"
-                   "WHERE  storage_type_id  == :storage_type\n"))
-    {
-        qWarning() << "Could not prepare delete Unknown or Memory storages query." << q.lastError();
-    }
-
-    q.bindValue(":storage_type", (int)KisResourceStorage::StorageType::Memory);
-
-    if (!q.exec()) {
-        qWarning() << "Could not execute delete Unknown or Memory storages query." << q.lastError();
-    }
-
-    QSqlDatabase::database().commit();
 }
 
 bool KisResourceCacheDb::registerResourceType(const QString &resourceType)
@@ -2080,6 +2385,7 @@ bool KisResourceCacheDb::updateMetaDataForId(const QMap<QString, QVariant> map, 
         if (!q.prepare("DELETE FROM metadata\n"
                        "WHERE  foreign_id = :id\n"
                        "AND    table_name = :table\n")) {
+            QSqlDatabase::database().rollback();
             qWarning() << "Could not prepare delete metadata query" << q.lastError();
             return false;
         }
@@ -2138,5 +2444,41 @@ bool KisResourceCacheDb::addMetaDataForId(const QMap<QString, QVariant> map, int
         }
         ++iter;
     }
+    return true;
+}
+
+bool KisResourceCacheDb::removeOrphanedMetaData()
+{
+    auto deleteMetadataForType = [] (const QString &tableName) {
+        KisSqlQueryLoader loader("inline://delete_orphaned_records (" + tableName + ")",
+                                 QString("DELETE FROM metadata\n"
+                                         "WHERE  foreign_id NOT IN (SELECT id FROM %1)\n"
+                                         "AND    table_name = \"%1\"\n")
+                                         .arg(tableName));
+        loader.exec();
+
+        if (loader.query().numRowsAffected() > 0) {
+            qWarning().noquote().nospace() << "WARNING: orphaned metadata records were found for " << tableName << "!";
+            qWarning().noquote().nospace() << "         Num records removed: " << loader.query().numRowsAffected();
+        }
+    };
+
+    try {
+        KisDatabaseTransactionLock transactionLock(QSqlDatabase::database());
+
+        deleteMetadataForType(METADATA_RESOURCES);
+        deleteMetadataForType(METADATA_STORAGES);
+
+        transactionLock.commit();
+
+    } catch (const KisSqlQueryLoader::SQLException &e) {
+        qWarning().noquote() << "ERROR: failed to execute query:" << e.message;
+        qWarning().noquote() << "       file:" << e.filePath;
+        qWarning().noquote() << "       statement:" << e.statementIndex;
+        qWarning().noquote() << "       error:" << e.sqlError.text();
+
+        return false;
+    }
+
     return true;
 }

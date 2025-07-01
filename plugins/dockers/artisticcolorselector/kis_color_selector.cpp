@@ -14,7 +14,6 @@
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QTransform>
-#include <QList>
 #include <cmath>
 
 #include <kis_config.h>
@@ -55,7 +54,7 @@ KisColorSelector::KisColorSelector(QWidget* parent, KisColor::Type type)
 
     using namespace std::placeholders; // For _1 placeholder
     auto function = std::bind(&KisColorSelector::slotUpdateColorAndPreview, this, _1);
-    m_updateColorCompressor.reset(new ColorCompressorType(20 /* ms */, function));
+    m_updateColorCompressor.reset(new ColorCompressorType(25 /* ms */, function));
 }
 
 void KisColorSelector::setColorSpace(KisColor::Type type)

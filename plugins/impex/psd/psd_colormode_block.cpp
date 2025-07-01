@@ -6,7 +6,6 @@
 #include "psd_colormode_block.h"
 
 #include <psd_utils.h>
-#include <QByteArray>
 #include <QColor>
 
 PSDColorModeBlock::PSDColorModeBlock(psd_color_mode colormode)
@@ -42,7 +41,7 @@ bool PSDColorModeBlock::read(QIODevice &io)
         int i = 0;
         while (i <= 767) {
             colormap.append(qRgb(data[i],data[i + 1],data[i + 2]));
-            i += 2;
+            i += 3;
         }
     }
     else {

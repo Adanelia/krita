@@ -10,7 +10,6 @@
 #include <QString>
 #include <QList>
 #include <QMultiMap>
-#include <QBitArray>
 
 #include "kritapigment_export.h"
 
@@ -66,12 +65,14 @@ const QString COMPOSITE_GRAIN_MERGE   = "grain_merge";
 const QString COMPOSITE_GRAIN_EXTRACT = "grain_extract";
 const QString COMPOSITE_EXCLUSION     = "exclusion";
 const QString COMPOSITE_HARD_MIX      = "hard mix";
+const QString COMPOSITE_HARD_MIX_HDR  = "hard_mix_hdr";
 const QString COMPOSITE_HARD_MIX_PHOTOSHOP = "hard_mix_photoshop";
 const QString COMPOSITE_HARD_MIX_SOFTER_PHOTOSHOP = "hard_mix_softer_photoshop";
 const QString COMPOSITE_OVERLAY       = "overlay";
 const QString COMPOSITE_BEHIND        = "behind";
 const QString COMPOSITE_GREATER       = "greater";
 const QString COMPOSITE_HARD_OVERLAY  = "hard overlay";
+const QString COMPOSITE_HARD_OVERLAY_HDR  = "hard_overlay_hdr";
 const QString COMPOSITE_INTERPOLATION = "interpolation";
 const QString COMPOSITE_INTERPOLATIONB = "interpolation 2x";
 const QString COMPOSITE_PENUMBRAA     = "penumbra a";
@@ -89,6 +90,7 @@ const QString COMPOSITE_EASY_BURN        = "easy burn";
 
 const QString COMPOSITE_LIGHTEN      = "lighten";
 const QString COMPOSITE_DODGE        = "dodge";
+const QString COMPOSITE_DODGE_HDR    = "dodge_hdr";
 const QString COMPOSITE_LINEAR_DODGE = "linear_dodge";
 const QString COMPOSITE_SCREEN       = "screen";
 const QString COMPOSITE_HARD_LIGHT   = "hard_light";
@@ -99,6 +101,7 @@ const QString COMPOSITE_SOFT_LIGHT_SVG  = "soft_light_svg";
 const QString COMPOSITE_GAMMA_LIGHT  = "gamma_light";
 const QString COMPOSITE_GAMMA_ILLUMINATION  = "gamma_illumination";
 const QString COMPOSITE_VIVID_LIGHT  = "vivid_light";
+const QString COMPOSITE_VIVID_LIGHT_HDR  = "vivid_light_hdr";
 const QString COMPOSITE_FLAT_LIGHT   = "flat_light";
 const QString COMPOSITE_LINEAR_LIGHT = "linear light";
 const QString COMPOSITE_PIN_LIGHT    = "pin_light";
@@ -113,6 +116,7 @@ const QString COMPOSITE_LUMINOSITY_SAI        = "luminosity_sai";
 
 const QString COMPOSITE_HUE            = "hue";
 const QString COMPOSITE_COLOR          = "color";
+const QString COMPOSITE_TINT           = "tint";
 const QString COMPOSITE_SATURATION     = "saturation";
 const QString COMPOSITE_INC_SATURATION = "inc_saturation";
 const QString COMPOSITE_DEC_SATURATION = "dec_saturation";

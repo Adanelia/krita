@@ -15,7 +15,6 @@
 #include "kritawidgets_export.h"
 #include <KoColorSet.h>
 #include <KisSwatchGroup.h>
-#include <QScopedPointer>
 
 class KisPaletteView;
 
@@ -121,6 +120,9 @@ private Q_SLOTS:
     void slotDisplayConfigurationChanged();
 
     void slotPaletteModified();
+    void slotLayoutAboutToChange();
+    void slotLayoutChanged();
+    void slotEntryChanged(int column, int row);
 
 private:
 
@@ -135,7 +137,7 @@ private:
 private /* member variables */:
     KoColorSetSP m_colorSet;
     QPointer<const KoColorDisplayRendererInterface> m_displayRenderer;
-
+    bool m_editing {false};
 };
 
 #endif

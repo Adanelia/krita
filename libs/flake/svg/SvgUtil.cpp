@@ -13,7 +13,6 @@
 #include <QString>
 #include <QRectF>
 #include <QStringList>
-#include <QFontMetrics>
 #include <QRegExp>
 
 #include <math.h>
@@ -227,7 +226,7 @@ qreal SvgUtil::parseUnit(SvgGraphicsContext *gc, const KoSvgTextProperties &reso
         return 0.0;
     }
     KoSvgText::CssLengthPercentage length = parseUnitStruct(gc, unit, horiz, vert, bbox);
-    length.convertToAbsolute(resolved.fontSize().value, resolved.xHeight());
+    length.convertToAbsolute(resolved.metrics(), resolved.fontSize().value);
 
     return length.value;
 }
@@ -273,6 +272,14 @@ KoSvgText::CssLengthPercentage SvgUtil::parseUnitStructImpl(SvgGraphicsContext *
             length.unit = KoSvgText::CssLengthPercentage::Em;
         } else if (unit.right(2) == QLatin1String("ex")) {
             length.unit = KoSvgText::CssLengthPercentage::Ex;
+        } else if (unit.right(3) == QLatin1String("cap")) {
+            length.unit = KoSvgText::CssLengthPercentage::Cap;
+        } else if (unit.right(2) == QLatin1String("ch")) {
+            length.unit = KoSvgText::CssLengthPercentage::Ch;
+        } else if (unit.right(2) == QLatin1String("ic")) {
+            length.unit = KoSvgText::CssLengthPercentage::Ic;
+        } else if (unit.right(2) == QLatin1String("lh")) {
+            length.unit = KoSvgText::CssLengthPercentage::Lh;
         } else if (unit.right(1) == QLatin1Char('%')) {
 
             if (percentageViewBox) {
@@ -446,11 +453,7 @@ QStringList SvgUtil::simplifyList(const QString &str)
     attribute.replace(',', ' ');
     attribute.remove('\r');
     attribute.remove('\n');
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
     return attribute.simplified().split(' ', Qt::SkipEmptyParts);
-#else
-    return attribute.simplified().split(' ', QString::SkipEmptyParts);
-#endif
 }
 
 SvgUtil::PreserveAspectRatioParser::PreserveAspectRatioParser(const QString &str)

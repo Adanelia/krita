@@ -18,6 +18,7 @@
 
 #include "kritaresources_export.h"
 
+class KisResourceSearchBoxFilter;
 /**
  * @brief The KisTagFilterResourceProxyModel class filters the resources by tag or resource name
  */
@@ -54,6 +55,16 @@ public:
     bool renameResource(KoResourceSP resource, const QString &name) override;
     bool setResourceMetaData(KoResourceSP resource, QMap<QString, QVariant> metadata) override;
 
+    /**
+     * @brief additionalResourceNameChecks
+     * Some resources, like fonts, have multiple names that need to be tested.
+     * Implementers should override this function if they want additional checks on the name.
+     * @param resource the resource index to test, this is provided by the model while testing each row.
+     * @param filter, this is the class that handles tokenisation, also provided by the model.
+     * @return should return whether the current resource should be accepted by the given filter.
+     */
+    virtual bool additionalResourceNameChecks(const QModelIndex &index, const KisResourceSearchBoxFilter *filter) const;
+
 
     /**
      * @brief setMetaDataFilter provides a set of metadata to filter on, for instance
@@ -68,6 +79,12 @@ public:
      */
     void setTagFilter(const KisTagSP tag);
 
+    /**
+     * @brief currentTagFilter
+     * @return return the current tag that's being used to filter.
+     */
+    KisTagSP currentTagFilter() const;
+
 
     void setStorageFilter(bool useFilter, int storageId);
 
@@ -80,6 +97,8 @@ public:
     void setSearchText(const QString& searchText);
 
     void setFilterInCurrentTag(bool filterInCurrentTag);
+
+    bool filterInCurrentTag() const;
 
     bool tagResources(const KisTagSP tag, const QVector<int> &resourceIds);
     bool untagResources(const KisTagSP tag, const QVector<int> &resourceIds);

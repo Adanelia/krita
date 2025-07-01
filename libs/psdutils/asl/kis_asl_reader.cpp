@@ -247,10 +247,10 @@ QImage readVirtualArrayList(QIODevice &device, int numPlanes, const QVector<QRgb
         throw ASLParseException("VAList: Krita doesn't support ASL files with 'numberOfChannels' flag not equal to 24 (it is not documented)!");
     }
 
-    // dbgKrita << ppVar(arrayVersion);
-    // dbgKrita << ppVar(arrayLength);
-    // dbgKrita << ppVar(arrayRect);
-    // dbgKrita << ppVar(numberOfChannels);
+    dbgKrita << ppVar(arrayVersion);
+    dbgKrita << ppVar(arrayLength);
+    dbgKrita << ppVar(arrayRect);
+    dbgKrita << ppVar(numberOfChannels);
 
     if (numPlanes != 1 && numPlanes != 3) {
         throw ASLParseException("VAList: unsupported number of planes!");
@@ -380,11 +380,7 @@ QImage readVirtualArrayList(QIODevice &device, int numPlanes, const QVector<QRgb
     } else if (pixelDepth1 == 8) {
         format = QImage::Format_ARGB32;
     } else {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
         format = QImage::Format_RGBA64;
-#else
-        throw ASLParseException("Qt does not support RGBA64!");
-#endif
     }
 
     QImage image(arrayRect.size(), format);
@@ -399,9 +395,16 @@ QImage readVirtualArrayList(QIODevice &device, int numPlanes, const QVector<QRgb
     if (format == QImage::Format_ARGB32) {
         quint8 *dstPtr = image.bits();
 
+        // This copies the single channel data into all three rgb channels, creating a grayscale picture
         for (int i = 0; i < dataLength; i++) {
             for (int j = 2; j >= 0; j--) {
-                const int plane = qMin(numPlanes, j);
+                int plane;
+                if (numPlanes == 1) {
+                    plane = 0;
+                }
+                else {
+                    plane = j;
+                }
                 *dstPtr++ = dataPlanes[plane][i];
             }
             *dstPtr++ = 0xFF;

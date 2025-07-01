@@ -7,7 +7,6 @@
  */
 
 #include <QPainter>
-#include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QAction>
 #include <QDialog>
@@ -190,7 +189,7 @@ void KisSegmentGradientEditor::setCompactMode(bool value)
 void KisSegmentGradientEditor::setGradient(KoSegmentGradientSP gradient)
 {
     m_gradient = gradient;
-    setEnabled(m_gradient);
+    setEnabled(bool(m_gradient));
 
     if (m_gradient) {
         nameedit->setText(m_gradient->name());

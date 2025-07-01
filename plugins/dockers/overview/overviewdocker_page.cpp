@@ -9,7 +9,6 @@
 #include "overviewwidget.h"
 #include "overviewdocker_page.h"
 
-#include <QLabel>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QToolButton>
@@ -238,7 +237,11 @@ void OverviewDockerPage::leaveEvent(QEvent*)
     }
 }
 
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
 void OverviewDockerPage::enterEvent(QEvent*)
+#else
+void OverviewDockerPage::enterEvent(QEnterEvent*)
+#endif
 {
     m_cursorIsHover = true;
     if (isEnabled() && !m_pinControls) {

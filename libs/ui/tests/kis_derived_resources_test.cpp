@@ -6,6 +6,7 @@
 
 #include "kis_derived_resources_test.h"
 
+#include <QSignalSpy>
 #include <simpletest.h>
 #include <brushengine/kis_paintop_preset.h>
 
@@ -33,6 +34,10 @@ void KisDerivedResourcesTest::test()
 {
     QScopedPointer<KoCanvasResourceProvider> manager(new KoCanvasResourceProvider());
     KisViewManager::initializeResourceManager(manager.data());
+
+    /// the opacity resource converter is usually added by the tool manager, which
+    /// is missing in the unittest, so add it manually
+    KisViewManager::testingInitializeOpacityToPresetResourceConverter(manager.data());
 
     QApplication::processEvents();
 

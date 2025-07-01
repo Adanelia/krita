@@ -14,9 +14,15 @@ import shutil
 import os
 from pathlib import Path
 import zipfile
-from PyQt5.QtXml import QDomDocument, QDomElement, QDomText, QDomNodeList
-from PyQt5.QtCore import Qt, QDateTime, QPointF
-from PyQt5.QtGui import QImage, QPolygonF, QColor
+try:
+    from PyQt6.QtXml import QDomDocument
+    from PyQt6.QtCore import Qt, QDateTime, QPointF
+    from PyQt6.QtGui import QImage, QPolygonF, QColor
+except:
+    from PyQt5.QtXml import QDomDocument
+    from PyQt5.QtCore import Qt, QDateTime, QPointF
+    from PyQt5.QtGui import QImage, QPolygonF, QColor
+from builtins import i18n
 
 def export(configDictionary = {}, projectURL = str(), pagesLocationList = [], pageData = []):
     path = Path(os.path.join(projectURL, configDictionary["exportLocation"]))
@@ -355,7 +361,7 @@ def write_opf_file(path, configDictionary, htmlFiles, pagesList, coverpageurl, c
     #Creation date
     modified = opfFile.createElement("meta")
     modified.setAttribute("property", "dcterms:modified")
-    modified.appendChild(opfFile.createTextNode(QDateTime.currentDateTimeUtc().toString(Qt.ISODate)))
+    modified.appendChild(opfFile.createTextNode(QDateTime.currentDateTimeUtc().toString(Qt.DateFormat.ISODate)))
     opfMeta.appendChild(modified)
     
     if "source" in configDictionary.keys():

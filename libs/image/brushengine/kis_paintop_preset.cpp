@@ -26,6 +26,7 @@
 #include <brushengine/kis_paintop_config_widget.h>
 #include <KisRequiredResourcesOperators.h>
 #include <KoLocalStrokeCanvasResources.h>
+#include <KisLocalStrokeResources.h>
 #include <KisResourceModel.h>
 #include "KisPaintopSettingsIds.h"
 #include <KisResourceTypes.h>
@@ -185,6 +186,11 @@ bool KisPaintOpPreset::loadFromDevice(QIODevice *dev, KisResourcesInterfaceSP re
     //Presets was saved with nested cdata section
     preset.replace("<curve><![CDATA[", "<curve>");
     preset.replace("]]></curve>", "</curve>");
+    //Presets with non-base64 pattern md5
+    QRegularExpressionMatch patternMd5 = QRegularExpression("<param (?:type=\"string\" )?name=\"Texture/Pattern/PatternMD5\"(?: type=\"string\")?><!\\[CDATA\\[(.+?)\\]\\]></param>").match(preset);
+    if (patternMd5.hasMatch() && patternMd5.captured(1).contains(QRegularExpression("[^a-zA-Z0-9+/=]"))) {
+        preset.replace(patternMd5.captured(0), "");
+    }
 
     QDomDocument doc;
     if (!doc.setContent(preset)) {
@@ -243,6 +249,8 @@ bool KisPaintOpPreset::loadFromDevice(QIODevice *dev, KisResourcesInterfaceSP re
     } else {
         setImage(img);
     }
+
+    updateLinkedResourcesMetaData();
 
     return true;
 }
@@ -383,6 +391,8 @@ bool KisPaintOpPreset::saveToDevice(QIODevice *dev) const
      */
     d->version = "5.0";
 
+    const_cast<KisPaintOpPreset*>(this)->updateLinkedResourcesMetaData();
+
     writer.setText("version", d->version);
     writer.setText("preset", doc.toString());
 
@@ -395,10 +405,9 @@ bool KisPaintOpPreset::saveToDevice(QIODevice *dev) const
     }
 
     return writer.write(img);
-
 }
 
-void KisPaintOpPreset::updateLinkedResourcesMetaData(KisResourcesInterfaceSP resourcesInterface)
+void KisPaintOpPreset::updateLinkedResourcesMetaData()
 {
     /**
      * The new preset format embeds all the linked resources outside
@@ -407,7 +416,8 @@ void KisPaintOpPreset::updateLinkedResourcesMetaData(KisResourcesInterfaceSP res
      */
 
     if (d->version == "2.2") {
-        QList<KoResourceLoadResult> dependentResources = this->linkedResources(resourcesInterface);
+        KisResourcesInterfaceSP fakeResourcesInterface(new KisLocalStrokeResources());
+        QList<KoResourceLoadResult> dependentResources = this->linkedResources(fakeResourcesInterface);
 
         QStringList resourceFileNames;
 
@@ -424,6 +434,8 @@ void KisPaintOpPreset::updateLinkedResourcesMetaData(KisResourcesInterfaceSP res
         if (!resourceFileNames.isEmpty()) {
             addMetaData("dependent_resources_filenames", resourceFileNames);
         }
+    } else {
+        addMetaData("dependent_resources_filenames", QStringList());
     }
 }
 

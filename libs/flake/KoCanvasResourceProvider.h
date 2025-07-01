@@ -15,6 +15,7 @@
 #include "KoResourceUpdateMediator.h"
 #include "KoActiveCanvasResourceDependency.h"
 #include <KoCanvasResourcesIds.h>
+#include "KoAbstractCanvasResourceInterface.h"
 
 template<class T> class QSharedPointer;
 class KoCanvasResourcesInterface;
@@ -98,6 +99,14 @@ public Q_SLOTS:
      * @see KoCanvasResource::CanvasResourceId
      */
     void setResource(int key, const KoUnit &unit);
+
+    /**
+     * Replace an existing existing derived or abstract resource with a new
+     * abstract resource.
+     *
+     * @see KoResourceManager::setAbstractResource
+     */
+    void setAbstractResource(KoAbstractCanvasResourceInterfaceSP abstractResource);
 
 public:
     /**
@@ -242,6 +251,16 @@ public:
      * @see KoResourceManager::removeDerivedResourceConverter()
      */
     void removeDerivedResourceConverter(int key);
+
+    /**
+     * @see KoResourceManager::hasAbstractResource()
+     */
+    bool hasAbstractResource(int key);
+
+    /**
+     * @see KoResourceManager::removeAbstractResource()
+     */
+    void removeAbstractResource(int key);
 
     /**
      * @see KoResourceManager::addResourceUpdateMediator

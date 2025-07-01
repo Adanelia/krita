@@ -31,6 +31,7 @@
 #include <QString>
 #include <QThread>
 #include <QTranslator>
+#include <QImageReader>
 
 #include <KisApplication.h>
 #include <KisMainWindow.h>
@@ -49,6 +50,7 @@
 #include "KisUiFont.h"
 #include "input/KisQtWidgetsTweaker.h"
 #include "kis_splash_screen.h"
+#include "config-qt-patches-present.h"
 
 #ifdef Q_OS_ANDROID
 #include <QtAndroid>
@@ -57,15 +59,16 @@
 #endif
 
 #if defined Q_OS_WIN
-#include "config_use_qt_tablet_windows.h"
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+// this include is Qt5-only, the switch to WinTab is embedded in Qt
+#  include "config_qt5_has_wintab_switch.h"
+#else
+#  include <QtGui/private/qguiapplication_p.h>
+#  include <QtGui/qpa/qplatformintegration.h>
+#endif
 #include <windows.h>
 #include <winuser.h>
-#ifndef USE_QT_TABLET_WINDOWS
-#include <kis_tablet_support_win.h>
-#include <kis_tablet_support_win8.h>
-#else
 #include <dialogs/KisDlgCustomTabletResolution.h>
-#endif
 #include "config-high-dpi-scale-factor-rounding-policy.h"
 #include "config-set-has-border-in-full-screen-default.h"
 #ifdef HAVE_SET_HAS_BORDER_IN_FULL_SCREEN_DEFAULT
@@ -245,7 +248,9 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
     bool runningInKDE = !qgetenv("KDE_FULL_SESSION").isEmpty();
 
 #if defined HAVE_X11
-    qputenv("QT_QPA_PLATFORM", "xcb");
+    if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "xcb");
+    }
 #elif defined Q_OS_WIN
     if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "windows:darkmode=1");
@@ -265,6 +270,12 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
     QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
 
     QCoreApplication::setAttribute(Qt::AA_DisableShaderDiskCache, true);
+
+    // In Qt6, QImageReader has an allocation limit to prevent large memory allocations.
+    // However in Qt5 this doesn't exist, and can easily trigger in KisFileIconCreator while creating icons on large thumbnails.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QImageReader::setAllocationLimit(0);
+#endif
 
 #ifdef HAVE_HIGH_DPI_SCALE_FACTOR_ROUNDING_POLICY
     // This rounding policy depends on a series of patches to Qt related to
@@ -324,7 +335,6 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
  * plugins from the **build environment** location.
  */
 #if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
-
     // APPIMAGE SOUND ADDITIONS
     // MLT needs a few environment variables set to properly function in an appimage context.
     // The following code should be configured to **only** run when we detect that Krita is being
@@ -332,15 +342,18 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
     // enough to filter out this step for non-appimage krita builds.
     const bool isInAppimage = qEnvironmentVariableIsSet("APPIMAGE");
     if (isInAppimage) {
-        QByteArray appimageMountDir = qgetenv("APPDIR");
+        QString appimageMountDir = qgetenv("APPDIR");
 
         {   // MLT
             //Plugins Path is where mlt should expect to find its plugin libraries.
-            qputenv("MLT_REPOSITORY", appimageMountDir + QFile::encodeName("/usr/lib/mlt-7/"));
-            qputenv("MLT_DATA", appimageMountDir + QFile::encodeName("/usr/share/mlt-7/"));
-            qputenv("MLT_ROOT_DIR", appimageMountDir + QFile::encodeName("/usr/"));
-            qputenv("MLT_PROFILES_PATH", appimageMountDir + QFile::encodeName("/usr/share/mlt-7/profiles/"));
-            qputenv("MLT_PRESETS_PATH", appimageMountDir + QFile::encodeName("/usr/share/mlt-7/presets/"));
+            const QString mltLibs = "/usr/lib/mlt-7";
+            const QString mltData = "/usr/share/mlt-7";
+
+            qputenv("MLT_ROOT_DIR", (appimageMountDir + "/usr").toUtf8());
+            qputenv("MLT_REPOSITORY", (appimageMountDir + mltLibs).toUtf8());
+            qputenv("MLT_DATA", (appimageMountDir + mltData).toUtf8());
+            qputenv("MLT_PROFILES_PATH", (appimageMountDir + mltData + "/profiles").toUtf8());
+            qputenv("MLT_PRESETS_PATH", (appimageMountDir + mltData + "/presets").toUtf8());
         }
 
         {
@@ -421,6 +434,25 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
         KisOpenGL::setDefaultSurfaceConfig(config);
         KisOpenGL::setDebugSynchronous(openGLDebugSynchronous);
 
+#if defined Q_OS_WIN || defined Q_OS_MACOS
+    qputenv("QT_WIDGETS_RHI", "1");
+    qputenv("QT_WIDGETS_RHI_BACKEND", "opengl");
+    qputenv("QSG_RHI_BACKEND", "opengl");
+#endif
+
+#if KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
+    if (!qEnvironmentVariableIsSet("QT_BACKING_STORE_USE_FAST_QIMAGE_TRANSFER")) {
+        qputenv("QT_BACKING_STORE_USE_FAST_QIMAGE_TRANSFER", "1");
+    }
+
+    if (!qEnvironmentVariableIsSet("QT_FRAME_RATE_OVERRIDE")) {
+        KisImageConfig cfg(true);
+        if (!cfg.detectFpsLimit()) {
+            qputenv("QT_FRAME_RATE_OVERRIDE", QString::number(cfg.fpsLimit()).toLatin1());
+        }
+    }
+#endif
+
 #ifdef Q_OS_WIN
         // HACK: https://bugs.kde.org/show_bug.cgi?id=390651
         resetRotation();
@@ -441,11 +473,11 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
         }
 
         // NOTE: This line helps also fontconfig have a user-accessible location on Android (see the commit).
-        qputenv("XDG_DATA_DIRS", QFile::encodeName(root + "share") + ":" + originalXdgDataDirs);
+        qputenv("XDG_DATA_DIRS", QString(QFile::encodeName(root + "share") + ":" + originalXdgDataDirs).toUtf8());
     }
 #elif defined(Q_OS_HAIKU)
-	qputenv("KRITA_PLUGIN_PATH", QFile::encodeName(root + "lib"));
-    qputenv("XDG_DATA_DIRS", QFile::encodeName(root + "share") + ":" + qgetenv("XDG_DATA_DIRS"));
+	qputenv("KRITA_PLUGIN_PATH", QString(QFile::encodeName(root + "lib")).toUtf8());
+    qputenv("XDG_DATA_DIRS", QString(QFile::encodeName(root + "share") + ":" + qgetenv("XDG_DATA_DIRS")).toUtf8());
 #else
     qputenv("XDG_DATA_DIRS", QFile::encodeName(QDir(root + "share").absolutePath()));
 #endif
@@ -547,7 +579,7 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
 
     KisUsageLogger::writeLocaleSysInfo();
 
-#if defined Q_OS_WIN && defined USE_QT_TABLET_WINDOWS && defined QT_HAS_WINTAB_SWITCH
+#if defined Q_OS_WIN && QT_VERSION < QT_VERSION_CHECK(6, 0, 0) && defined QT5_HAS_WINTAB_SWITCH
     const bool forceWinTab = !KisConfig::useWin8PointerInputNoApp(&kritarc);
     QCoreApplication::setAttribute(Qt::AA_MSWindowsUseWinTabAPI, forceWinTab);
 
@@ -564,14 +596,16 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
     // first create the application so we can create a pixmap
     KisApplication app(key, argc, argv);
 
-    installTranslators(app);
-
-    if (KisApplication::platformName() == "wayland") {
-        QMessageBox::critical(nullptr,
-                              i18nc("@title:window", "Fatal Error"),
-                              i18n("Krita does not support the Wayland platform. Use XWayland to run Krita on Wayland. Krita will close now."));
-        return -1;
+#if defined Q_OS_WIN && QT_VERSION > QT_VERSION_CHECK(6, 0, 0)
+    const bool forceWinTab = !KisConfig::useWin8PointerInputNoApp(&kritarc);
+    using QWindowsApplication = QNativeInterface::Private::QWindowsApplication;
+    if (auto nativeWindowsApp = dynamic_cast<QWindowsApplication *>(QGuiApplicationPrivate::platformIntegration())) {
+        nativeWindowsApp->setWinTabEnabled(forceWinTab);
     }
+#endif
+
+
+    installTranslators(app);
 
     KisUsageLogger::writeHeader();
     KisOpenGL::initialize();
@@ -650,7 +684,7 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
         const bool batchRun = args.exportAs() || args.exportSequence();
 
         if (!batchRun) {
-            if (app.sendMessage(args.serialize())) {
+            if (app.sendMessage(args.serialize().toBase64())) {
                 return 0;
             }
         }
@@ -668,10 +702,11 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
         // Icons in menus are ugly and distracting
         KisApplication::setAttribute(Qt::AA_DontShowIconsInMenus);
     }
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 10, 0))
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
     KisApplication::setAttribute(Qt::AA_DisableWindowContextHelpButton);
 #endif
     app.installEventFilter(KisQtWidgetsTweaker::instance());
+    app.setDesktopFileName(QStringLiteral("org.kde.krita"));
 
     if (!args.noSplash()) {
         QWidget *splash = new KisSplashScreen();
@@ -680,14 +715,10 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
 
 #if defined Q_OS_WIN
     KisConfig cfg(false);
-    bool supportedWindowsVersion = true;
     QOperatingSystemVersion osVersion = QOperatingSystemVersion::current();
     if (osVersion.type() == QOperatingSystemVersion::Windows) {
-        if (osVersion.majorVersion() >= QOperatingSystemVersion::Windows7.majorVersion()) {
-            supportedWindowsVersion  = true;
-        }
-        else {
-            supportedWindowsVersion  = false;
+        // TODO QT6: update minimum requirement
+        if (osVersion.majorVersion() < QOperatingSystemVersion::Windows7.majorVersion()) {
             if (cfg.readEntry("WarnedAboutUnsupportedWindows", false)) {
                 QMessageBox::information(nullptr,
                                          i18nc("@title:window", "Krita: Warning"),
@@ -699,48 +730,8 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
             }
         }
     }
-#ifndef USE_QT_TABLET_WINDOWS
-    {
-        if (cfg.useWin8PointerInput() && !KisTabletSupportWin8::isAvailable()) {
-            cfg.setUseWin8PointerInput(false);
-        }
-        if (!cfg.useWin8PointerInput()) {
-            bool hasWinTab = KisTabletSupportWin::init();
-            if (!hasWinTab && supportedWindowsVersion) {
-                if (KisTabletSupportWin8::isPenDeviceAvailable()) {
-                    // Use WinInk automatically
-                    cfg.setUseWin8PointerInput(true);
-                } else if (!cfg.readEntry("WarnedAboutMissingWinTab", false)) {
-                    if (KisTabletSupportWin8::isAvailable()) {
-                        QMessageBox::information(nullptr,
-                                                 i18n("Krita Tablet Support"),
-                                                 i18n("Cannot load WinTab driver and no Windows Ink pen devices are found. If you have a drawing tablet, please make sure the tablet driver is properly installed."),
-                                                 QMessageBox::Ok, QMessageBox::Ok);
-                    } else {
-                        QMessageBox::information(nullptr,
-                                                 i18n("Krita Tablet Support"),
-                                                 i18n("Cannot load WinTab driver. If you have a drawing tablet, please make sure the tablet driver is properly installed."),
-                                                 QMessageBox::Ok, QMessageBox::Ok);
-                    }
-                    cfg.writeEntry("WarnedAboutMissingWinTab", true);
-                }
-            }
-        }
-        if (cfg.useWin8PointerInput()) {
-            KisTabletSupportWin8 *penFilter = new KisTabletSupportWin8();
-            if (penFilter->init()) {
-                // penFilter.registerPointerDeviceNotifications();
-                app.installNativeEventFilter(penFilter);
-                dbgKrita << "Using Win8 Pointer Input for tablet support";
-            } else {
-                dbgKrita << "No Win8 Pointer Input available";
-                delete penFilter;
-            }
-        }
-    }
-#elif defined QT_HAS_WINTAB_SWITCH
-    Q_UNUSED(supportedWindowsVersion);
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0) && defined QT5_HAS_WINTAB_SWITCH
     // Check if WinTab/WinInk has actually activated
     const bool useWinInkAPI = !KisApplication::testAttribute(Qt::AA_MSWindowsUseWinTabAPI);
 
@@ -750,17 +741,13 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
         cfg.setUseWin8PointerInput(useWinInkAPI);
         cfg.setUseRightMiddleTabletButtonWorkaround(true);
     }
-
 #endif
 #endif
     KisApplication::setAttribute(Qt::AA_CompressHighFrequencyEvents, false);
 
     // Set up remote arguments.
-    QObject::connect(&app, SIGNAL(messageReceived(QByteArray,QObject*)),
-                     &app, SLOT(remoteArguments(QByteArray,QObject*)));
-
-    QObject::connect(&app, SIGNAL(fileOpenRequest(QString)),
-                     &app, SLOT(fileOpenRequested(QString)));
+    QObject::connect(&app, &KisApplication::messageReceived,
+                     &app, &KisApplication::remoteArguments);
 
     // Hardware information
     KisUsageLogger::writeSysInfo("\nHardware Information\n");
@@ -777,7 +764,6 @@ extern "C" MAIN_EXPORT int MAIN_FN(int argc, char **argv)
     KisUsageLogger::writeSysInfo(
         QString("  Supported instruction sets: %1")
             .arg(KisSupportedArchitectures::supportedInstructionSets()));
-
     KisUsageLogger::writeSysInfo("");
 
     KisConfig(true).logImportantSettings();

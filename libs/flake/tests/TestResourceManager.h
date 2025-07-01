@@ -20,6 +20,9 @@ private Q_SLOTS:
     void testComplexResource();
 
     void testNeverChangingConverters();
+
+    void testAbstractResource();
+    void testDerivedAbstractChange();
 };
 
 #endif // TESTRESOURCEMANAGER_H

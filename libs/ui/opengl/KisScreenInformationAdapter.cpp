@@ -84,7 +84,7 @@ void KisScreenInformationAdapter::Private::initialize(QOpenGLContext *newContext
 
     try {
 
-#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
+#if defined Q_OS_WIN
 
         if (!context->isOpenGLES()) {
             throw EGLException("the context is not OpenGL ES");
@@ -191,7 +191,7 @@ KisScreenInformationAdapter::ScreenInfo KisScreenInformationAdapter::infoForScre
 {
     ScreenInfo info;
 
-#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
+#if defined Q_OS_WIN
 
     QPlatformNativeInterface *nativeInterface = qGuiApp->platformNativeInterface();
     HMONITOR monitor = reinterpret_cast<HMONITOR>(nativeInterface->nativeResourceForScreen("handle", screen));
@@ -225,19 +225,19 @@ KisScreenInformationAdapter::ScreenInfo KisScreenInformationAdapter::infoForScre
                 info.maxLuminance = desc.MaxLuminance;
                 info.maxFullFrameLuminance = desc.MaxFullFrameLuminance;
 
-                info.colorSpace = KisSurfaceColorSpace::DefaultColorSpace;
+                info.colorSpace = KisSurfaceColorSpaceWrapper::DefaultColorSpace;
 
                 if (desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709) {
-                    info.colorSpace = KisSurfaceColorSpace::sRGBColorSpace;
-                } else if (desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709) {
+                    info.colorSpace = KisSurfaceColorSpaceWrapper::sRGBColorSpace;
+                } else if (desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709) {
 #ifdef HAVE_HDR
-                    info.colorSpace = KisSurfaceColorSpace::scRGBColorSpace;
+                    info.colorSpace = KisSurfaceColorSpaceWrapper::scRGBColorSpace;
 #else
                     qWarning("WARNING: scRGB display color space is not supported by Qt's build");
 #endif
                 } else if (desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020) {
 #ifdef HAVE_HDR
-                    info.colorSpace = KisSurfaceColorSpace::bt2020PQColorSpace;
+                    info.colorSpace = KisSurfaceColorSpaceWrapper::bt2020PQColorSpace;
 #else
                     qWarning("WARNING: bt2020-pq display color space is not supported by Qt's build");
 #endif

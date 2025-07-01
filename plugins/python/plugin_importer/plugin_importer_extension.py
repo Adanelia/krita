@@ -8,16 +8,19 @@ import html
 import os
 import tempfile
 
-import krita
+from krita import Krita, Extension, FileDialog
 
-from PyQt5.QtCore import QStandardPaths
-from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog
+try:
+    from PyQt6.QtWidgets import QMessageBox, QInputDialog
+except:
+    from PyQt5.QtWidgets import QMessageBox, QInputDialog
+from builtins import i18n, Application
 
 from .plugin_importer import PluginImporter, PluginImportError
 from .plugin_downloader import download_plugin, PluginDownloadError
 
 
-class PluginImporterExtension(krita.Extension):
+class PluginImporterExtension(Extension):
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -44,8 +47,8 @@ class PluginImporterExtension(krita.Extension):
             i18n('Overwrite Plugin'),
             i18n('The plugin "%s" already exists. Overwrite it?') % (
                 plugin['ui_name']),
-            QMessageBox.Yes | QMessageBox.No)
-        return reply == QMessageBox.Yes
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        return reply == QMessageBox.StandardButton.Yes
 
     def confirm_activate(self, plugins):
         txt = [
@@ -67,8 +70,8 @@ class PluginImporterExtension(krita.Extension):
             self.parent.activeWindow().qwindow(),
             i18n('Activate Plugins?'),
             ('\n').join(txt),
-            QMessageBox.Yes | QMessageBox.No)
-        return reply == QMessageBox.Yes
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        return reply == QMessageBox.StandardButton.Yes
 
     def display_errors(self, error):
         msg = '<p>%s</p><pre>%s</pre>' % (
@@ -111,12 +114,12 @@ class PluginImporterExtension(krita.Extension):
                 self.do_import(zipfile)
 
     def import_plugin_from_file(self):
-        zipfile = QFileDialog.getOpenFileName(
+        zipfile = FileDialog.getOpenFileName(
             self.parent.activeWindow().qwindow(),
             i18n('Import Plugin'),
             os.path.expanduser('~'),
-            '%s (*.zip)' % i18n('Zip Archives'),
-        )[0]
+            '%s (*.zip)' % i18n('Zip Archives')
+        )
 
         if not zipfile:
             return

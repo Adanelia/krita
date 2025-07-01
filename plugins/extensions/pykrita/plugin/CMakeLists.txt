@@ -26,6 +26,10 @@ target_link_libraries(
     kritalibkis
   )
 
+if (QT_MAJOR_VERSION STREQUAL "6")
+    target_link_libraries(pykrita KF6::ColorScheme)
+endif()
+
 kis_add_library(kritapykrita MODULE
     plugin.cpp
     pyqtpluginsettings.cpp
@@ -50,7 +54,7 @@ install(TARGETS kritapykrita DESTINATION ${KRITA_PLUGIN_INSTALL_DIR})
 # Install "built-in" api
 install(
     DIRECTORY krita
-    DESTINATION ${LIB_INSTALL_DIR}/krita-python-libs
+    DESTINATION ${KDE_INSTALL_LIBDIR}/krita-python-libs
     FILES_MATCHING PATTERN "*.py"
 )
 

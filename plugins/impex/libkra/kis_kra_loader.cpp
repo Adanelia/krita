@@ -284,7 +284,26 @@ KisImageSP KisKraLoader::loadXML(const QDomElement& imageElement)
             proofingConfig->proofingDepth = attr;
         }
         if (!(attr = imageElement.attribute(PROOFINGINTENT)).isNull()) {
-            proofingConfig->intent = (KoColorConversionTransformation::Intent) KisDomUtils::toInt(attr);
+            proofingConfig->conversionIntent = (KoColorConversionTransformation::Intent) KisDomUtils::toInt(attr);
+        }
+        if (!(attr = imageElement.attribute(PROOFINGDISPLAYINTENT)).isNull()) {
+            proofingConfig->displayIntent = (KoColorConversionTransformation::Intent) KisDomUtils::toInt(attr);
+        }
+        if (!(attr = imageElement.attribute(PROOFINGDISPLAYMODE)).isNull()) {
+            if (attr == "monitor") {
+                proofingConfig->displayMode = KisProofingConfiguration::Monitor;
+            } else if (attr == "paper") {
+                proofingConfig->displayMode = KisProofingConfiguration::Paper;
+            } else {
+                proofingConfig->displayMode = KisProofingConfiguration::Custom;
+            }
+        }
+        if (!(attr = imageElement.attribute(PROOFINGBLACKPOINTCOMPENSATION)).isNull()) {
+            proofingConfig->useBlackPointCompensationFirstTransform = (attr == "true");
+        }
+
+        if (!(attr = imageElement.attribute(PROOFINGDISPLAYBLACKPOINTCOMPENSATION)).isNull()) {
+            proofingConfig->displayFlags.setFlag(KoColorConversionTransformation::BlackpointCompensation, attr == "true");
         }
 
         if (!(attr = imageElement.attribute(PROOFINGADAPTATIONSTATE)).isNull()) {
@@ -580,7 +599,7 @@ void KisKraLoader::loadResources(KoStore *store, KisDocument *doc)
             /// don't try to load the resource if its file is empty
             /// (which is a sign of a failed save operation)
             if (!store->device()->atEnd() && !doc->linkedResourcesStorageId().isEmpty()) {
-                bool result = model.importResource(resourceItem.filename, store->device(), false, doc->linkedResourcesStorageId());
+                bool result = bool(model.importResource(resourceItem.filename, store->device(), false, doc->linkedResourcesStorageId()));
                 if (!result) {
                     m_d->warningMessages.append(i18nc("Warning message on loading a .kra file", "Embedded resource cannot be imported. The filename of the resource: %1", resourceItem.filename));
                 }

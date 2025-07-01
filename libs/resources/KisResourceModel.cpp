@@ -6,11 +6,9 @@
 
 #include "KisResourceModel.h"
 
-#include <QElapsedTimer>
 #include <QBuffer>
-#include <QImage>
-#include <QtSql>
-#include <QStringList>
+#include <QSqlError>
+#include <QSqlQuery>
 
 #include <KisResourceLocator.h>
 #include <KisResourceCacheDb.h>
@@ -40,44 +38,20 @@ KisAllResourcesModel::KisAllResourcesModel(const QString &resourceType, QObject 
     /// we don't handle KisResourceLocator::storage{Added,Removed} signals
     /// here, we use per-resource notifications from KisResourceLocator instead
 
-    connect(KisStorageModel::instance(), SIGNAL(storageEnabled(const QString&)), this, SLOT(storageActiveStateChanged(const QString&)));
-    connect(KisStorageModel::instance(), SIGNAL(storageDisabled(const QString&)), this, SLOT(storageActiveStateChanged(const QString&)));
+    connect(KisStorageModel::instance(), &KisStorageModel::storageEnabled, this, &KisAllResourcesModel::storageActiveStateChanged);
+    connect(KisStorageModel::instance(), &KisStorageModel::storageDisabled, this, &KisAllResourcesModel::storageActiveStateChanged);
+    connect(KisStorageModel::instance(), &KisStorageModel::storageResynchronized, this, &KisAllResourcesModel::storageResynchronized);
+    connect(KisStorageModel::instance(), &KisStorageModel::storagesBulkSynchronizationFinished, this, &KisAllResourcesModel::storagesBulkSynchronizationFinished);
 
-    connect(KisResourceLocator::instance(), SIGNAL(beginExternalResourceImport(QString, int)), this, SLOT(beginExternalResourceImport(QString, int)));
-    connect(KisResourceLocator::instance(), SIGNAL(endExternalResourceImport(QString)), this, SLOT(endExternalResourceImport(QString)));
-
-    connect(KisResourceLocator::instance(), SIGNAL(beginExternalResourceRemove(QString, QVector<int>)), this, SLOT(beginExternalResourceRemove(QString, QVector<int>)));
-    connect(KisResourceLocator::instance(), SIGNAL(endExternalResourceRemove(QString)), this, SLOT(endExternalResourceRemove(QString)));
-    connect(KisResourceLocator::instance(), SIGNAL(resourceActiveStateChanged(QString, int)), this, SLOT(slotResourceActiveStateChanged(QString, int)));
+    connect(KisResourceLocator::instance(), &KisResourceLocator::beginExternalResourceImport, this, &KisAllResourcesModel::beginExternalResourceImport);
+    connect(KisResourceLocator::instance(), &KisResourceLocator::endExternalResourceImport, this, &KisAllResourcesModel::endExternalResourceImport);
+    connect(KisResourceLocator::instance(), &KisResourceLocator::beginExternalResourceRemove, this, &KisAllResourcesModel::beginExternalResourceRemove);
+    connect(KisResourceLocator::instance(), &KisResourceLocator::endExternalResourceRemove, this, &KisAllResourcesModel::endExternalResourceRemove);
+    connect(KisResourceLocator::instance(), &KisResourceLocator::resourceActiveStateChanged, this, &KisAllResourcesModel::slotResourceActiveStateChanged);
 
     d->resourceType = resourceType;
 
-    bool r = d->resourcesQuery.prepare("SELECT resources.id\n"
-                                       ",      resources.storage_id\n"
-                                       ",      resources.name\n"
-                                       ",      resources.filename\n"
-                                       ",      resources.tooltip\n"
-                                       ",      resources.status\n"
-                                       ",      resources.md5sum\n"
-                                       ",      storages.location\n"
-                                       ",      resource_types.name as resource_type\n"
-                                       ",      resources.status as resource_active\n"
-                                       ",      storages.active as storage_active\n"
-                                       "FROM   resources\n"
-                                       ",      resource_types\n"
-                                       ",      storages\n"
-                                       "WHERE  resources.resource_type_id = resource_types.id\n"
-                                       "AND    resources.storage_id = storages.id\n"
-                                       "AND    resource_types.name = :resource_type\n"
-                                       "GROUP BY resources.name\n"
-                                       ",        resources.filename\n"
-                                       ",        resources.md5sum\n"
-                                       "ORDER BY resources.id");
-    if (!r) {
-        qWarning() << "Could not prepare KisAllResourcesModel query" << d->resourcesQuery.lastError();
-    }
-    d->resourcesQuery.bindValue(":resource_type", d->resourceType);
-
+    prepareQuery();
     resetQuery();
 }
 
@@ -152,6 +126,10 @@ QVariant KisAllResourcesModel::headerData(int section, Qt::Orientation orientati
             return i18n("Dirty");
         case MetaData:
             return i18n("Metadata");
+        case BrokenStatus:
+            return i18n("Broken Status");
+        case BrokenStatusMessage:
+            return i18n("Broken Status Message");
         default:
             return QString::number(section);
         }
@@ -176,6 +154,31 @@ Qt::ItemFlags KisAllResourcesModel::flags(const QModelIndex &index) const
         return Qt::NoItemFlags;
     }
     return QAbstractTableModel::flags(index) | Qt::ItemIsEditable | Qt::ItemNeverHasChildren;
+}
+
+QHash<int, QByteArray> KisAllResourcesModel::roleNames() const
+{
+    QHash<int, QByteArray> roles = QAbstractItemModel::roleNames();
+    roles[Qt::UserRole + Id] = "id";
+    roles[Qt::UserRole + StorageId] = "storageId";
+    roles[Qt::UserRole + Name] = "name";
+    roles[Qt::UserRole + Filename] = "filename";
+    //roles[Qt::UserRole + Tooltip] = "tooltip";
+    roles[Qt::UserRole + Thumbnail] = "thumbnail";
+    roles[Qt::UserRole + Status] = "status";
+    roles[Qt::UserRole + Location] = "location";
+    roles[Qt::UserRole + ResourceType] = "resourcetype";
+    roles[Qt::UserRole + MD5] = "md5";
+    roles[Qt::UserRole + Tags] = "tags";
+    roles[Qt::UserRole + LargeThumbnail] = "largethumbnail";
+    roles[Qt::UserRole + Dirty] = "dirty";
+    roles[Qt::UserRole + MetaData] = "metadata";
+    roles[Qt::UserRole + ResourceActive] = "resourceactive";
+    roles[Qt::UserRole + StorageActive] = "storageactive";
+    roles[Qt::UserRole + BrokenStatus] = "brokenstatus";
+    roles[Qt::UserRole + BrokenStatusMessage] = "brokenstatusmessage";
+
+    return roles;
 }
 
 KoResourceSP KisAllResourcesModel::resourceForIndex(QModelIndex index) const
@@ -545,8 +548,56 @@ bool KisAllResourcesModel::setResourceMetaData(KoResourceSP resource, QMap<QStri
     return KisResourceLocator::instance()->setMetaDataForResource(resource->resourceId(), metadata);
 }
 
+bool KisAllResourcesModel::prepareQuery()
+{
+    bool r = d->resourcesQuery.prepare(
+        "SELECT resources.id\n"
+        ",      resources.storage_id\n"
+        ",      resources.name\n"
+        ",      resources.filename\n"
+        ",      resources.tooltip\n"
+        ",      resources.status\n"
+        ",      resources.md5sum\n"
+        ",      storages.location\n"
+        ",      resource_types.name as resource_type\n"
+        ",      resources.status as resource_active\n"
+        ",      storages.active as storage_active\n"
+        "FROM   resources\n"
+        ",      resource_types\n"
+        ",      storages\n"
+        "WHERE  resources.resource_type_id = resource_types.id\n"
+        "AND    resources.storage_id = storages.id\n"
+        "AND    resource_types.name = :resource_type\n"
+        "GROUP BY resources.name\n"
+        ",        resources.filename\n"
+        ",        resources.md5sum\n"
+        "ORDER BY resources.id");
+
+    if (!r) {
+        qWarning() << "Could not prepare KisAllResourcesModel query" << d->resourcesQuery.lastError();
+        return false;
+    }
+
+    d->resourcesQuery.bindValue(":resource_type", d->resourceType);
+    return true;
+}
+
+void KisAllResourcesModel::closeQuery()
+{
+    d->resourcesQuery.clear();
+}
+
 bool KisAllResourcesModel::resetQuery()
 {
+    /**
+     * In case the query has been previously closed, try to restart it
+     * (used in unittests mostly)
+     */
+    if (!d->resourcesQuery.isValid()) {
+        d->resourcesQuery.clear();
+        prepareQuery();
+    }
+
     bool r = d->resourcesQuery.exec();
     if (!r) {
         qWarning() << "Could not select" << d->resourceType << "resources" << d->resourcesQuery.lastError() << d->resourcesQuery.boundValues();
@@ -644,6 +695,27 @@ void KisAllResourcesModel::storageActiveStateChanged(const QString &location)
             Q_EMIT dataChanged(index, index, {Qt::UserRole + KisAbstractResourceModel::StorageActive});
         }
     }
+}
+
+void KisAllResourcesModel::storageResynchronized(const QString &storage, bool isBulkResynchronization)
+{
+    Q_UNUSED(storage);
+
+    // we handle bulk-synchronization separately in slotStoragesBulkSynchronizationFinished()
+    if (isBulkResynchronization) return;
+
+    // TODO: ideally, we should use more fine-grained updates for
+    //       updating the storages, but let's keep it this
+    beginResetModel();
+    resetQuery();
+    endResetModel();
+}
+
+void KisAllResourcesModel::storagesBulkSynchronizationFinished()
+{
+    beginResetModel();
+    resetQuery();
+    endResetModel();
 }
 
 void KisAllResourcesModel::beginExternalResourceImport(const QString &resourceType, int numResources)

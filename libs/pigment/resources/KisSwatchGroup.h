@@ -14,10 +14,8 @@
 #include "kritapigment_export.h"
 
 #include <QSharedPointer>
-#include <QVector>
 #include <QList>
 #include <QMap>
-#include <QScopedPointer>
 
 #include <KisPropagateConstWrapper.h>
 
@@ -56,6 +54,7 @@ public:
     int rowCount() const;
 
     int colorCount() const;
+    int slotCount() const;
 
     /**
      * @brief getColors

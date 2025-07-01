@@ -14,7 +14,6 @@
 #include "kis_paintop_box.h"
 
 #include <QHBoxLayout>
-#include <QLabel>
 #include <QToolButton>
 #include <QPixmap>
 #include <QWidgetAction>
@@ -916,9 +915,9 @@ void KisPaintopBox::slotInputDeviceChanged(const KoInputDevice& inputDevice)
 
     //qDebug() << "slotInputDeviceChanged()" << inputDevice.device() << inputDevice.uniqueTabletId();
 
-    m_eraserTogglePresetAction->setChecked(inputDevice.pointer() == QTabletEvent::Eraser);
-    m_eraserSelectPresetAction->setChecked(inputDevice.pointer() == QTabletEvent::Eraser);
-    m_brushSelectPresetAction->setChecked(inputDevice.pointer() == QTabletEvent::Pen);
+    m_eraserTogglePresetAction->setChecked(inputDevice.pointer() == KoInputDevice::Pointer::Eraser);
+    m_eraserSelectPresetAction->setChecked(inputDevice.pointer() == KoInputDevice::Pointer::Eraser);
+    m_brushSelectPresetAction->setChecked(inputDevice.pointer() == KoInputDevice::Pointer::Pen);
 
     m_currTabletToolID = TabletToolID(inputDevice);
 
@@ -929,7 +928,7 @@ void KisPaintopBox::slotInputDeviceChanged(const KoInputDevice& inputDevice)
 
         findDefaultPresets();
 
-        if (inputDevice.pointer() == QTabletEvent::Eraser) {
+        if (inputDevice.pointer() == KoInputDevice::Pointer::Eraser) {
             preset = rserver->resource("", "", cfg.readEntry<QString>(QString("LastEraser_%1").arg(inputDevice.uniqueTabletId()), m_eraserName));
         }
         else {
@@ -961,8 +960,8 @@ void KisPaintopBox::slotInputDeviceChanged(const KoInputDevice& inputDevice)
 
 void KisPaintopBox::slotToggleEraserPreset(bool usingEraser)
 {
-    QTabletEvent::TabletDevice dev = QTabletEvent::NoDevice;
-    QTabletEvent::PointerType ptr = usingEraser ? QTabletEvent::Eraser : QTabletEvent::Pen;
+    KoInputDevice::InputDevice dev = KoInputDevice::InputDevice::Unknown;
+    KoInputDevice::Pointer ptr = usingEraser ? KoInputDevice::Pointer::Eraser : KoInputDevice::Pointer::Pen;
     qint64 id = -1;
     const KoInputDevice inputDevice(dev, ptr, id);
     slotInputDeviceChanged(inputDevice);
@@ -973,8 +972,8 @@ void KisPaintopBox::slotSelectEraserPreset()
     // automatically select freehand brush tool for these select actions
     KoToolManager::instance()->switchToolRequested("KritaShape/KisToolBrush");
 
-    QTabletEvent::TabletDevice dev = QTabletEvent::NoDevice;
-    QTabletEvent::PointerType ptr = QTabletEvent::Eraser;
+    KoInputDevice::InputDevice dev = KoInputDevice::InputDevice::Unknown;
+    KoInputDevice::Pointer ptr = KoInputDevice::Pointer::Eraser;
     qint64 id = -1;
     const KoInputDevice inputDevice(dev, ptr, id);
     slotInputDeviceChanged(inputDevice);
@@ -986,8 +985,8 @@ void KisPaintopBox::slotSelectBrushPreset()
     // automatically select freehand brush tool for these select actions
     KoToolManager::instance()->switchToolRequested("KritaShape/KisToolBrush");
 
-    QTabletEvent::TabletDevice dev = QTabletEvent::NoDevice;
-    QTabletEvent::PointerType ptr = QTabletEvent::Pen;
+    KoInputDevice::InputDevice dev = KoInputDevice::InputDevice::Unknown;
+    KoInputDevice::Pointer ptr = KoInputDevice::Pointer::Pen;
     qint64 id = -1;
     const KoInputDevice inputDevice(dev, ptr, id);
     slotInputDeviceChanged(inputDevice);
@@ -1235,7 +1234,6 @@ void KisPaintopBox::sliderChanged(int n)
 
 
         KisLockedPropertiesProxySP propertiesProxy = KisLockedPropertiesServer::instance()->createLockedPropertiesProxy(m_resourceProvider->currentPreset()->settings());
-        propertiesProxy->setProperty("OpacityValue", opacity);
         propertiesProxy->setProperty("FlowValue", flow);
         propertiesProxy->setProperty("Texture/Pattern/Scale", patternsize);
         m_presetsEditor->readOptionSetting(m_resourceProvider->currentPreset()->settings());
@@ -1280,6 +1278,8 @@ void KisPaintopBox::slotToolChanged(KoCanvasController* canvas)
     QString  id   = KoToolManager::instance()->activeToolId();
     KisTool* tool = dynamic_cast<KisTool*>(KoToolManager::instance()->toolById(m_viewManager->canvasBase(), id));
 
+    setSliderValue("opacity", m_resourceProvider->opacity());
+
     if (tool) {
         int flags = tool->flags();
 
@@ -1291,12 +1291,6 @@ void KisPaintopBox::slotToolChanged(KoCanvasController* canvas)
 
             setSliderValue("size", m_resourceProvider->size());
             setAngleSliderValue("rotation", m_resourceProvider->brushRotation());
-
-            {
-                qreal opacity = m_resourceProvider->currentPreset()->settings()->paintOpOpacity();
-                m_resourceProvider->setOpacity(opacity);
-                setSliderValue("opacity", opacity);
-            }
 
             {
                 setSliderValue("flow", m_resourceProvider->currentPreset()->settings()->paintOpFlow());
@@ -1578,7 +1572,7 @@ void KisPaintopBox::updatePresetConfig()
     QMapIterator<TabletToolID, TabletToolData> iter(m_tabletToolMap);
     while (iter.hasNext()) {
         iter.next();
-        if ((iter.key().pointer) == QTabletEvent::Eraser) {
+        if ((iter.key().pointer) == KoInputDevice::Pointer::Eraser) {
             cfg.writeEntry(QString("LastEraser_%1").arg(iter.key().uniqueTabletId),
                            iter.value().preset->name());
         }

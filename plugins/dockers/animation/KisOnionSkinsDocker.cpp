@@ -8,7 +8,6 @@
 #include "ui_KisOnionSkinsDocker.h"
 
 #include <QSlider>
-#include <QFrame>
 #include <QGridLayout>
 #include <QEvent>
 
@@ -98,7 +97,7 @@ KisOnionSkinsDocker::KisOnionSkinsDocker(QWidget *parent) :
 
         m_filterButtonGroup->setViableLabels(viableColors);
 
-        connect(m_filterButtonGroup, SIGNAL(buttonToggled(int,bool)), this, SLOT(slotFilteredColorsChanged()));
+        connect(m_filterButtonGroup, SIGNAL(idToggled(int,bool)), this, SLOT(slotFilteredColorsChanged()));
         connect(ui->colorFilterGroupbox, SIGNAL(toggled(bool)), this, SLOT(slotFilteredColorsChanged()));
         connect(ui->resetFilter, SIGNAL(pressed()), m_filterButtonGroup, SLOT(reset()) );
     }

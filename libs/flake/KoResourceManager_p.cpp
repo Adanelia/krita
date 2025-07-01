@@ -17,9 +17,14 @@
 
 void KoResourceManager::slotResourceInternalsChanged(int key)
 {
-    KIS_SAFE_ASSERT_RECOVER_RETURN(m_resources.contains(key));
+    KIS_SAFE_ASSERT_RECOVER_RETURN(m_resources.contains(key) || m_abstractResources.contains(key));
     notifyDerivedResourcesChanged(key, m_resources[key]);
     notifyDependenciesAboutTargetChange(key, m_resources[key]);
+}
+
+void KoResourceManager::slotAbstractResourceChangedExternal(int key, const QVariant &value)
+{
+    notifyResourceChanged(key, value);
 }
 
 void KoResourceManager::setResource(int key, const QVariant &value)
@@ -29,7 +34,21 @@ void KoResourceManager::setResource(int key, const QVariant &value)
     KoDerivedResourceConverterSP converter =
         m_derivedResources.value(key, KoDerivedResourceConverterSP());
 
-    if (converter) {
+    KoAbstractCanvasResourceInterfaceSP abstractResource =
+            m_abstractResources.value(key, KoAbstractCanvasResourceInterfaceSP());
+
+    if (abstractResource) {
+        const QVariant oldValue = abstractResource->value();
+        abstractResource->setValue(value);
+
+        if (m_updateMediators.contains(key)) {
+            m_updateMediators[key]->connectResource(value);
+        }
+
+        if (oldValue != value) {
+            notifyResourceChanged(key, value);
+        }
+    } else if (converter) {
         const int sourceKey = converter->sourceKey();
         const QVariant oldSourceValue = m_resources.value(sourceKey, QVariant());
 
@@ -126,6 +145,12 @@ void KoResourceManager::notifyDependenciesAboutTargetChange(int targetKey, const
 
 QVariant KoResourceManager::resource(int key) const
 {
+    KoAbstractCanvasResourceInterfaceSP abstractResource =
+            m_abstractResources.value(key, KoAbstractCanvasResourceInterfaceSP());
+    if (abstractResource) {
+        return abstractResource->value();
+    }
+
     KoDerivedResourceConverterSP converter =
         m_derivedResources.value(key, KoDerivedResourceConverterSP());
 
@@ -213,6 +238,8 @@ QSizeF KoResourceManager::sizeResource(int key) const
 
 bool KoResourceManager::hasResource(int key) const
 {
+    if (m_abstractResources.contains(key)) return true;
+
     KoDerivedResourceConverterSP converter =
         m_derivedResources.value(key, KoDerivedResourceConverterSP());
 
@@ -225,6 +252,9 @@ void KoResourceManager::clearResource(int key)
     // we cannot remove a derived resource
     if (m_derivedResources.contains(key)) return;
 
+    // we cannot remove an abstract resource either
+    if (m_abstractResources.contains(key)) return;
+
     if (m_resources.contains(key)) {
         m_resources.remove(key);
         notifyResourceChanged(key, QVariant());
@@ -234,6 +264,9 @@ void KoResourceManager::clearResource(int key)
 void KoResourceManager::addDerivedResourceConverter(KoDerivedResourceConverterSP converter)
 {
     KIS_SAFE_ASSERT_RECOVER_NOOP(!m_derivedResources.contains(converter->key()));
+
+    if (hasAbstractResource(converter->key()))
+        qWarning() << "An abstract resource with the same resource ID exists!";
 
     m_derivedResources.insert(converter->key(), converter);
     m_derivedFromSource.insert(converter->sourceKey(), converter);
@@ -319,5 +352,46 @@ void KoResourceManager::removeActiveCanvasResourceDependency(int sourceKey, int 
                 ++it;
             }
         }
+    }
+}
+
+bool KoResourceManager::hasAbstractResource(int key)
+{
+    return m_abstractResources.contains(key);
+}
+
+void KoResourceManager::removeAbstractResource(int key)
+{
+    Q_ASSERT(hasAbstractResource(key));
+
+    KoAbstractCanvasResourceInterfaceSP resourceInterface = m_abstractResources.value(key);
+    disconnect(resourceInterface.data(), SIGNAL(sigResourceChangedExternal(int, QVariant)),
+               this, SLOT(slotAbstractResourceChangedExternal(int, QVariant)));
+    m_abstractResources.remove(key);
+}
+
+void KoResourceManager::setAbstractResource(KoAbstractCanvasResourceInterfaceSP resourceInterface)
+{
+    KIS_SAFE_ASSERT_RECOVER_RETURN(resourceInterface);
+
+    if (hasDerivedResourceConverter(resourceInterface->key()))
+        qWarning() << "A derived resource converter with the same resource ID exists!";
+
+    const QVariant oldValue = this->resource(resourceInterface->key());
+
+    KoAbstractCanvasResourceInterfaceSP oldResourceInterface =
+        m_abstractResources.value(resourceInterface->key());
+    if (oldResourceInterface) {
+        disconnect(oldResourceInterface.data(), SIGNAL(sigResourceChangedExternal(int, QVariant)),
+                   this, SLOT(slotAbstractResourceChangedExternal(int, QVariant)));
+    }
+
+    m_abstractResources[resourceInterface->key()] = resourceInterface;
+
+    connect(resourceInterface.data(), SIGNAL(sigResourceChangedExternal(int, QVariant)),
+            this, SLOT(slotAbstractResourceChangedExternal(int, const QVariant&)));
+
+    if (oldValue != resourceInterface->value()) {
+        notifyResourceChanged(resourceInterface->key(), resourceInterface->value());
     }
 }

@@ -8,7 +8,6 @@
 #define TEXTPROPERTIESDOCK_H
 
 #include <QDockWidget>
-#include <QIcon>
 #include <kis_mainwindow_observer.h>
 #include <QPointer>
 
@@ -16,6 +15,7 @@
 
 class KoDialog;
 class QQuickWidget;
+class KoSvgTextProperties;
 
 class TextPropertiesDock : public QDockWidget, public KisMainwindowObserver {
     Q_OBJECT
@@ -27,12 +27,17 @@ public:
     void setCanvas(KoCanvasBase *canvas) override;
     void unsetCanvas() override;
 
-
-
 public Q_SLOTS:
     void slotCanvasTextPropertiesChanged();
     void slotTextPropertiesChanged();
+    void slotUpdateStylesModel();
+    void slotUpdateAxesValues();
+    QString wwsFontFamilyName(QString familyName);
     void connectAutoEnabler(QObject *watched);
+
+    QColor modalColorDialog(QColor oldColor);
+
+    void callModalTextPropertyConfigDialog();
 
 private:
     QPointer<KisCanvas2> m_canvas;

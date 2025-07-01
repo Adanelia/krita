@@ -1,17 +1,24 @@
 # SPDX-License-Identifier: CC0-1.0
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap, QIcon
-from PyQt5.QtWidgets import (QDialogButtonBox, QLabel, QVBoxLayout,
-                             QHBoxLayout, QCheckBox)
+try:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QPixmap, QIcon
+    from PyQt6.QtWidgets import (QDialogButtonBox, QLabel, QVBoxLayout,
+                                 QHBoxLayout, QCheckBox)
+except:
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtGui import QPixmap, QIcon
+    from PyQt5.QtWidgets import (QDialogButtonBox, QLabel, QVBoxLayout,
+                                 QHBoxLayout, QCheckBox)
 from . import tenbrushesdialog, dropbutton
-import krita
+from krita import Krita, PresetChooser
+from builtins import i18n, Application
 
 
 class UITenBrushes(object):
 
     def __init__(self):
-        self.kritaInstance = krita.Krita.instance()
+        self.kritaInstance = Krita.instance()
         self.mainDialog = tenbrushesdialog.TenBrushesDialog(
             self, self.kritaInstance.activeWindow().qwindow())
 
@@ -28,14 +35,18 @@ class UITenBrushes(object):
             i18n("&Select freehand brush tool when pressing a shortcut"),
             self.mainDialog)
 
+        self.checkBoxShowMessage = QCheckBox(
+            i18n("Show on-canvas &popup message when activating brush preset"),
+            self.mainDialog)
+
         self.buttonBox.accepted.connect(self.mainDialog.accept)
         self.buttonBox.rejected.connect(self.mainDialog.reject)
 
-        self.buttonBox.setOrientation(Qt.Horizontal)
+        self.buttonBox.setOrientation(Qt.Orientation.Horizontal)
         self.buttonBox.setStandardButtons(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
 
-        self.presetChooser = krita.PresetChooser(self.mainDialog)
+        self.presetChooser = PresetChooser(self.mainDialog)
 
     def initialize(self, tenbrushes):
         self.tenbrushes = tenbrushes
@@ -60,17 +71,24 @@ class UITenBrushes(object):
         self.checkBoxAutoBrush.toggled.connect(self.setAutoBrush)
         self.vbox.addWidget(self.checkBoxAutoBrush)
 
+        self.checkBoxShowMessage.setChecked(self.tenbrushes.showMessage)
+        self.checkBoxShowMessage.toggled.connect(self.setShowMessage)
+        self.vbox.addWidget(self.checkBoxShowMessage)
+
         self.vbox.addWidget(self.buttonBox)
 
         self.mainDialog.show()
         self.mainDialog.activateWindow()
-        self.mainDialog.exec_()
+        self.mainDialog.exec()
 
     def setActivatePrev(self, checked):
         self.tenbrushes.activatePrev = checked
 
     def setAutoBrush(self, checked):
         self.tenbrushes.autoBrush = checked
+
+    def setShowMessage(self, checked):
+        self.tenbrushes.showMessage = checked
 
     def loadButtons(self):
         self.tenbrushes.buttons = []
@@ -98,7 +116,7 @@ class UITenBrushes(object):
 
             label = QLabel(
                 action.shortcut().toString())
-            label.setAlignment(Qt.AlignHCenter)
+            label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
             buttonLayout.addWidget(label)
 
             self.hbox.addLayout(buttonLayout)

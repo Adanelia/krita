@@ -12,7 +12,6 @@
 #include <QColor>
 #include <QPainter>
 #include <QMouseEvent>
-#include <QTimer>
 #include <QToolButton>
 #include <QApplication>
 
@@ -408,7 +407,7 @@ void KisColorSelector::init()
 
     // a tablet can send many more signals, than a mouse
     // this causes many repaints, if updating after every signal.
-    m_signalCompressor = new KisSignalCompressor(20, KisSignalCompressor::FIRST_INACTIVE, this);
+    m_signalCompressor = new KisSignalCompressor(25, KisSignalCompressor::FIRST_INACTIVE, this);
     connect(m_signalCompressor, SIGNAL(timeout()), SLOT(update()));
 
     setMinimumSize(40, 40);

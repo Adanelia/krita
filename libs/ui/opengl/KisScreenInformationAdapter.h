@@ -9,8 +9,7 @@
 
 #include "kritaui_export.h"
 #include <QScopedPointer>
-#include <QSurfaceFormat>
-#include "KisSurfaceColorSpace.h"
+#include <KisSurfaceColorSpaceWrapper.h>
 
 class QScreen;
 class QOpenGLContext;
@@ -21,7 +20,7 @@ public:
     struct ScreenInfo {
         QScreen *screen = 0;
         int bitsPerColor = 0;
-        KisSurfaceColorSpace colorSpace = KisSurfaceColorSpace::DefaultColorSpace;
+        KisSurfaceColorSpaceWrapper colorSpace;
         qreal redPrimary[2] = {0, 0};
         qreal greenPrimary[2] = {0, 0};
         qreal bluePrimary[2] = {0, 0};

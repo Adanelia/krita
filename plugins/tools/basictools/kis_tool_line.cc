@@ -13,7 +13,6 @@
 #include "kis_tool_line.h"
 
 
-#include <QPushButton>
 
 #include <ksharedconfig.h>
 
@@ -58,6 +57,8 @@ KisToolLine::KisToolLine(KoCanvasBase * canvas)
     setObjectName("tool_line");
 
     setSupportOutline(true);
+
+    setIsOpacityPresetMode(true);
 
     connect(&m_strokeUpdateCompressor, SIGNAL(timeout()), SLOT(updateStroke()));
     connect(&m_longStrokeUpdateCompressor, SIGNAL(timeout()), SLOT(updateStroke()));

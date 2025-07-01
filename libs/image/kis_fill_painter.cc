@@ -16,12 +16,10 @@
 #include <QFontInfo>
 #include <QFontMetrics>
 #include <QPen>
-#include <QMatrix>
 #include <QImage>
 #include <QMap>
 #include <QPainter>
 #include <QRect>
-#include <QString>
 
 #include <klocalizedstring.h>
 

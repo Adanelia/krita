@@ -12,6 +12,7 @@
 #include <text/KoFontRegistry.h>
 #include <text/KoSvgText.h>
 #include <text/KoSvgTextProperties.h>
+#include <text/KoWritingSystemUtils.h>
 
 #include "KoSvgTextShapeMarkupConverter.h"
 #include "SvgParserTestingUtils.h"
@@ -119,6 +120,7 @@ void TestSvgText::initTestCase()
     for (const char *const fontDir : {
              "fonts/CSSTest",
              "fonts/testFontsCozens",
+             "fonts/testFontNames",
          }) {
         QString fileName = TestUtil::fetchDataFileLazy(fontDir);
         bool res = KoFontRegistry::instance()->addFontFileDirectoryToRegistery(fileName);
@@ -274,8 +276,9 @@ void TestSvgText::testParseFontStyles()
     }
 
     QCOMPARE(getFont().fontSize().value, 15.0);
-    QCOMPARE(QFont::Style(getFont().property(KoSvgTextProperties::FontStyleId).toInt()), QFont::StyleOblique);
-    QCOMPARE(getFont().property(KoSvgTextProperties::FontVariantCapsId).toInt(), KoSvgText::SmallCaps);
+
+    QCOMPARE(getFont().property(KoSvgTextProperties::FontStyleId).value<KoSvgText::CssFontStyleData>(), KoSvgText::CssFontStyleData(QFont::StyleOblique));
+    QCOMPARE(getFont().property(KoSvgTextProperties::FontVariantCapsId).toInt(), KoSvgText::CapsSmall);
     QCOMPARE(getFont().property(KoSvgTextProperties::FontWeightId).toInt(), 600);
 
     {
@@ -413,7 +416,7 @@ void TestSvgText::testSimpleText()
     QCOMPARE(KoSvgTextShape::Private::childCount(chunkShape->d->textData.childBegin()), 0);
 
     QString text = chunkShape->d->textData.childBegin()->text;
-    QVector<bool> collapse = KoCssTextUtils::collapseSpaces(&text, KoSvgText::Collapse);
+    QVector<bool> collapse = KoCssTextUtils::collapseSpaces(&text, QMap<int, KoSvgText::TextSpaceCollapse>({{0, KoSvgText::Collapse}}));
     QCOMPARE(collapse.count(false), 17);
     QCOMPARE(text, QString("         Hello, out there!         "));
 
@@ -476,7 +479,7 @@ void TestSvgText::testComplexText()
         QCOMPARE(KoSvgTextShape::Private::childCount(child), 0);
 
         QString text = child->text;
-        QVector<bool> collapse = KoCssTextUtils::collapseSpaces(&text, KoSvgText::Collapse);
+        QVector<bool> collapse = KoCssTextUtils::collapseSpaces(&text, QMap<int, KoSvgText::TextSpaceCollapse>({{0, KoSvgText::Collapse}}));
 
         QCOMPARE(collapse.count(false), 6);
         QCOMPARE(text, QString("             Hello, "));
@@ -582,14 +585,31 @@ void TestSvgText::testTextBaselineShift()
     bool res = file.open(QIODevice::ReadOnly | QIODevice::Text);
     QVERIFY2(res, QString("Cannot open test svg file.").toLatin1());
 
-    SvgRenderTester t(file.readAll());
-
-    t.setCheckQImagePremultiplied(true);
-    t.test_standard("text_baseline_shift", QSize(180, 40), 72);
+    SvgTester t(file.readAll());
+    t.parser().setResolution(QRectF(0, 0, 180, 40) /* px */, 72 /* ppi */);
+    t.run();
 
     KoSvgTextShape *baseShape = dynamic_cast<KoSvgTextShape*>(t.findShape("testRect"));
     QVERIFY(baseShape);
 
+    QLineF caret;
+    QColor color;
+
+    baseShape->cursorForPos(0, caret, color);
+
+    QLine testCaret = QLine(QPoint(4,25),QPoint(4,10));
+    QVERIFY2(caret.toLine() == testCaret,
+             QString("Wrong caret for position 0, normal").toLatin1());
+
+    baseShape->cursorForPos(7, caret, color);
+    testCaret = QLine(QPoint(60,17),QPoint(60,2));
+    QVERIFY2(caret.toLine() == testCaret,
+             QString("Wrong caret for position 7, superscript").toLatin1());
+
+    baseShape->cursorForPos(17, caret, color);
+    testCaret = QLine(QPoint(141,27),QPoint(141,12));
+    QVERIFY2(caret.toLine() == testCaret,
+             QString("Wrong caret for position 17, subscript").toLatin1());
 }
 /**
  * @brief TestSvgText::testTextSpacing
@@ -1058,8 +1078,8 @@ void TestSvgText::testTrailingWhitespace()
     for (auto itL = linkChunk.constBegin(); itL != linkChunk.constEnd(); ++itL) {
         for (auto itA = chunkA.constBegin(); itA != chunkA.constEnd(); ++itA) {
             for (auto itB = chunkB.constBegin(); itB != chunkB.constEnd(); ++itB) {
-                if (itA->rightRef(1) != " " &&
-                    itB->leftRef(1) != " " &&
+                if (itA->right(1) != " " &&
+                    itB->left(1) != " " &&
                     *itL != " " &&
                     *itL != linkChunk.last()) continue;
 
@@ -1361,7 +1381,9 @@ void TestSvgText::testAddingTestFont()
 
     QVector<int> lengths;
     QMap<QString, qreal> axisSettings;
-    const std::vector<FT_FaceSP> faces = KoFontRegistry::instance()->facesForCSSValues({fontName}, lengths, axisSettings);
+    KoCSSFontInfo  info;
+    info.families.append(fontName);
+    const std::vector<FT_FaceSP> faces = KoFontRegistry::instance()->facesForCSSValues(lengths, info);
 
     bool res = false;
     for (const FT_FaceSP &face : faces) {
@@ -1497,12 +1519,13 @@ void TestSvgText::testFontSelectionForText()
     // Test the letter a.
 
     QString test = "a";
-    QMap<QString, qreal> axisSettings;
+    KoCSSFontInfo info;
 
     // First we verify that we can find the test fonts.
 
     QVector<int> lengths;
-    const std::vector<FT_FaceSP> faces = KoFontRegistry::instance()->facesForCSSValues({"CSSTest Verify"}, lengths, axisSettings, test);
+    info.families = QStringList({"CSSTest Verify"});
+    const std::vector<FT_FaceSP> faces = KoFontRegistry::instance()->facesForCSSValues(lengths, info, test);
 
     QVERIFY2(lengths.size() == 1, QString("KoFontRegistry selected the wrong amount of fonts for the following text: %1").arg(test).toLatin1());
 
@@ -1519,7 +1542,8 @@ void TestSvgText::testFontSelectionForText()
     QVector<int> expectedLengths;
     expectedLengths << 4 << 3;
     
-    const std::vector<FT_FaceSP> faces2 = KoFontRegistry::instance()->facesForCSSValues(fontFamilies, lengths, axisSettings, test);
+    info.families = fontFamilies;
+    const std::vector<FT_FaceSP> faces2 = KoFontRegistry::instance()->facesForCSSValues(lengths, info, test);
     QVERIFY2(lengths == expectedLengths, QString("KoFontRegistry returns the wrong lengths for string %1").arg(test).toLatin1());
     for (const FT_FaceSP &face : faces2) {
         // qDebug() << face->family_name;
@@ -1537,7 +1561,7 @@ void TestSvgText::testFontSelectionForText()
 
     test = "Hand:\u270d\U0001F3FF etc.";
     
-    const std::vector<FT_FaceSP> faces3 = KoFontRegistry::instance()->facesForCSSValues(fontFamilies, lengths, axisSettings, test);
+    const std::vector<FT_FaceSP> faces3 = KoFontRegistry::instance()->facesForCSSValues(lengths, info, test);
     expectedLengths.clear();
     expectedLengths << 5 << 3 << 5;
     // we can only test the lengths here because dejavu sans doesn't
@@ -1561,7 +1585,8 @@ void TestSvgText::testFontSelectionForText()
                   << "Krita_Test_Unicode_Variation_A"
                   << "CSSTest Verify"
                   << "Krita_Test_Unicode_Variation_A";
-    const std::vector<FT_FaceSP> faces4 = KoFontRegistry::instance()->facesForCSSValues(fontFamilies, lengths, axisSettings, test);
+    info.families = fontFamilies;
+    const std::vector<FT_FaceSP> faces4 = KoFontRegistry::instance()->facesForCSSValues(lengths, info, test);
     QVERIFY2(lengths == expectedLengths, QString("KoFontRegistry returns the wrong lengths for string %1").arg(test).toLatin1());
     for (const FT_FaceSP &face : faces4) {
         foundFonts.append(face->family_name);
@@ -1588,7 +1613,8 @@ void TestSvgText::testFontSelectionForText()
                  << "Krita_Test_Unicode_Variation_B"
                  << "Krita_Test_Unicode_Variation_A";
     
-    const std::vector<FT_FaceSP> faces5 = KoFontRegistry::instance()->facesForCSSValues(fontFamilies, lengths, axisSettings, test);
+    info.families = fontFamilies;
+    const std::vector<FT_FaceSP> faces5 = KoFontRegistry::instance()->facesForCSSValues(lengths, info, test);
     QVERIFY2(lengths == expectedLengths, QString("KoFontRegistry returns the wrong lengths for string %1").arg(test).toLatin1());
     for (const FT_FaceSP &face : faces5) {
         // qDebug() << face->family_name;
@@ -1622,7 +1648,8 @@ void TestSvgText::testFontSelectionForText()
                   << "CSSTest Verify"
                   << "Krita_Test_Unicode_Variation_B"
                   << "CSSTest Verify";
-    const std::vector<FT_FaceSP> faces6 = KoFontRegistry::instance()->facesForCSSValues(fontFamilies, lengths, axisSettings, test);
+    info.families = fontFamilies;
+    const std::vector<FT_FaceSP> faces6 = KoFontRegistry::instance()->facesForCSSValues(lengths, info, test);
     QVERIFY2(lengths == expectedLengths, QString("KoFontRegistry returns the wrong lengths for string %1").arg(test).toLatin1());
     for (const FT_FaceSP &face : faces6) {
         // qDebug() << face->family_name;
@@ -1640,7 +1667,7 @@ void TestSvgText::testFontSelectionForText()
 
     // Jack of diamonds is U+1f0cb and is part of DejaVu Sans
     test = "Jack:🃋";
-    const std::vector<FT_FaceSP> faces7 = KoFontRegistry::instance()->facesForCSSValues(fontFamilies, lengths, axisSettings, test);
+    const std::vector<FT_FaceSP> faces7 = KoFontRegistry::instance()->facesForCSSValues(lengths, info, test);
     foundFonts.clear();
     expectedLengths.clear();
     expectedLengths << 5 << 2;
@@ -1661,68 +1688,315 @@ void TestSvgText::testFontSelectionForText()
                  .toLatin1());
 }
 
-/**
- * @brief TestSvgText::testFontStyleSelection
- *
- * This tests whether the font registery is selecting things like bold or italics correctly.
+/*
+ * Now we go through a table of font-weights for the given test fonts.
+ * This test is an adaptation of web-platform-test font-weight-normal-001.xht
  */
-void TestSvgText::testFontStyleSelection()
-{
-    QString verifyCSSTest = "CSSTest Verify";
-    QString test = "A";
-    QMap<QString, qreal> axisSettings;
+void TestSvgText::testWWSConverterWeight_data() {
+    QTest::addColumn<QString>("fontFamily");
+    QTest::addColumn<QString>("testString");
+    QTest::addColumn<int>("requestedWeight");
+    QTest::addColumn<int>("expectedWeight");
 
-    // First we verify that we can find the test fonts.
+    QTest::addRow("full 100") << QString("CSSTest Weights Full") << QString("A") << 100 << 100;
+    QTest::addRow("full 200") << QString("CSSTest Weights Full") << QString("A") << 200 << 200;
+    QTest::addRow("full 300") << QString("CSSTest Weights Full") << QString("A") << 300 << 300;
+    QTest::addRow("full 400") << QString("CSSTest Weights Full") << QString("A") << 400 << 400;
+    QTest::addRow("full 500") << QString("CSSTest Weights Full") << QString("A") << 500 << 500;
+    QTest::addRow("full 600") << QString("CSSTest Weights Full") << QString("A") << 600 << 600;
+    QTest::addRow("full 700") << QString("CSSTest Weights Full") << QString("A") << 700 << 700;
+    QTest::addRow("full 800") << QString("CSSTest Weights Full") << QString("A") << 800 << 800;
+    QTest::addRow("full 900") << QString("CSSTest Weights Full") << QString("A") << 900 << 900;
 
-    {
-        QVector<int> lengths;
-        const std::vector<FT_FaceSP> faces = KoFontRegistry::instance()->facesForCSSValues({verifyCSSTest}, lengths, axisSettings, test);
+    QTest::addRow("W1479 100") << QString("CSSTest Weights W1479") << QString("A") << 100 << 100;
+    QTest::addRow("W1479 200") << QString("CSSTest Weights W1479") << QString("A") << 200 << 100;
+    QTest::addRow("W1479 300") << QString("CSSTest Weights W1479") << QString("A") << 300 << 100;
+    QTest::addRow("W1479 400") << QString("CSSTest Weights W1479") << QString("A") << 400 << 400;
+    QTest::addRow("W1479 500") << QString("CSSTest Weights W1479") << QString("A") << 500 << 400;
+    QTest::addRow("W1479 600") << QString("CSSTest Weights W1479") << QString("A") << 600 << 700;
+    QTest::addRow("W1479 700") << QString("CSSTest Weights W1479") << QString("A") << 700 << 700;
+    QTest::addRow("W1479 800") << QString("CSSTest Weights W1479") << QString("A") << 800 << 900;
+    QTest::addRow("W1479 900") << QString("CSSTest Weights W1479") << QString("A") << 900 << 900;
 
-        bool res = false;
-        for (const FT_FaceSP &face : faces) {
-            // qDebug() << face->family_name;
-            if (face->family_name == verifyCSSTest) {
-                res = true;
-                break;
-            }
-        }
-        QVERIFY2(res, QString("KoFontRegistry did not return the expected test font %1").arg(verifyCSSTest).toLatin1());
+    QTest::addRow("W15 100") << QString("CSSTest Weights W15") << QString("A") << 100 << 100;
+    QTest::addRow("W15 200") << QString("CSSTest Weights W15") << QString("A") << 200 << 100;
+    QTest::addRow("W15 300") << QString("CSSTest Weights W15") << QString("A") << 300 << 100;
+    QTest::addRow("W15 400") << QString("CSSTest Weights W15") << QString("A") << 400 << 500;
+    QTest::addRow("W15 500") << QString("CSSTest Weights W15") << QString("A") << 500 << 500;
+    QTest::addRow("W15 600") << QString("CSSTest Weights W15") << QString("A") << 600 << 500;
+    QTest::addRow("W15 700") << QString("CSSTest Weights W15") << QString("A") << 700 << 500;
+    QTest::addRow("W15 800") << QString("CSSTest Weights W15") << QString("A") << 800 << 500;
+    QTest::addRow("W15 900") << QString("CSSTest Weights W15") << QString("A") << 900 << 500;
 
-        // Now we go through a table of font-weights for the given test fonts.
-        // This test is an adaptation of web-platform-test font-weight-bolder-001.xht
-        // Note: when comparing to
-        // https://github.com/web-platform-tests/wpt/blob/master/css/css-fonts/support/font-weight-bolder-001-ref.png
-        // our implementation leaves things to be desired, but at the least it's using the correct fonts.
+    QTest::addRow("W24 100") << QString("CSSTest Weights W24") << QString("A") << 100 << 200;
+    QTest::addRow("W24 200") << QString("CSSTest Weights W24") << QString("A") << 200 << 200;
+    QTest::addRow("W24 300") << QString("CSSTest Weights W24") << QString("A") << 300 << 200;
+    QTest::addRow("W24 400") << QString("CSSTest Weights W24") << QString("A") << 400 << 400;
+    QTest::addRow("W24 500") << QString("CSSTest Weights W24") << QString("A") << 500 << 400;
+    QTest::addRow("W24 600") << QString("CSSTest Weights W24") << QString("A") << 600 << 400;
+    QTest::addRow("W24 700") << QString("CSSTest Weights W24") << QString("A") << 700 << 400;
+    QTest::addRow("W24 800") << QString("CSSTest Weights W24") << QString("A") << 800 << 400;
+    QTest::addRow("W24 900") << QString("CSSTest Weights W24") << QString("A") << 900 << 400;
 
-        QFile file(TestUtil::fetchDataFileLazy("fonts/textTestSvgs/font-weight-bolder-001.svg"));
-        res = file.open(QIODevice::ReadOnly | QIODevice::Text);
-        QVERIFY2(res, QString("Cannot open test svg file.").toLatin1());
+    QTest::addRow("W2569 100") << QString("CSSTest Weights W2569") << QString("A") << 100 << 200;
+    QTest::addRow("W2569 200") << QString("CSSTest Weights W2569") << QString("A") << 200 << 200;
+    QTest::addRow("W2569 300") << QString("CSSTest Weights W2569") << QString("A") << 300 << 200;
+    QTest::addRow("W2569 400") << QString("CSSTest Weights W2569") << QString("A") << 400 << 500;
+    QTest::addRow("W2569 500") << QString("CSSTest Weights W2569") << QString("A") << 500 << 500;
+    QTest::addRow("W2569 600") << QString("CSSTest Weights W2569") << QString("A") << 600 << 600;
+    QTest::addRow("W2569 700") << QString("CSSTest Weights W2569") << QString("A") << 700 << 900;
+    QTest::addRow("W2569 800") << QString("CSSTest Weights W2569") << QString("A") << 800 << 900;
+    QTest::addRow("W2569 900") << QString("CSSTest Weights W2569") << QString("A") << 900 << 900;
 
-        QRect renderRect(0, 0, 300, 150);
+    QTest::addRow("W258 100") << QString("CSSTest Weights W258") << QString("A") << 100 << 200;
+    QTest::addRow("W258 200") << QString("CSSTest Weights W258") << QString("A") << 200 << 200;
+    QTest::addRow("W258 300") << QString("CSSTest Weights W258") << QString("A") << 300 << 200;
+    QTest::addRow("W258 400") << QString("CSSTest Weights W258") << QString("A") << 400 << 500;
+    QTest::addRow("W258 500") << QString("CSSTest Weights W258") << QString("A") << 500 << 500;
+    QTest::addRow("W258 600") << QString("CSSTest Weights W258") << QString("A") << 600 << 800;
+    QTest::addRow("W258 700") << QString("CSSTest Weights W258") << QString("A") << 700 << 800;
+    QTest::addRow("W258 800") << QString("CSSTest Weights W258") << QString("A") << 800 << 800;
+    QTest::addRow("W258 900") << QString("CSSTest Weights W258") << QString("A") << 900 << 800;
 
-        SvgRenderTester t(file.readAll());
-        t.setFuzzyThreshold(5);
-        t.setCheckQImagePremultiplied(true);
-        t.test_standard("font-weight-bolder-001", renderRect.size(), 72.0);
-    }
+    QTest::addRow("W3589 100") << QString("CSSTest Weights W3589") << QString("A") << 100 << 300;
+    QTest::addRow("W3589 200") << QString("CSSTest Weights W3589") << QString("A") << 200 << 300;
+    QTest::addRow("W3589 300") << QString("CSSTest Weights W3589") << QString("A") << 300 << 300;
+    QTest::addRow("W3589 400") << QString("CSSTest Weights W3589") << QString("A") << 400 << 500;
+    QTest::addRow("W3589 500") << QString("CSSTest Weights W3589") << QString("A") << 500 << 500;
+    QTest::addRow("W3589 600") << QString("CSSTest Weights W3589") << QString("A") << 600 << 800;
+    QTest::addRow("W3589 700") << QString("CSSTest Weights W3589") << QString("A") << 700 << 800;
+    QTest::addRow("W3589 800") << QString("CSSTest Weights W3589") << QString("A") << 800 << 800;
+    QTest::addRow("W3589 900") << QString("CSSTest Weights W3589") << QString("A") << 900 << 900;
 
-    {
-        QString testItalic = "CSS Test Basic";
-        QVector<int> lengths;
-        const std::vector<FT_FaceSP> faces =
-            KoFontRegistry::instance()->facesForCSSValues({testItalic}, lengths, axisSettings, test, 72, 72, 1, 1.0, 400, 100, true);
+    QTest::addRow("W47 100") << QString("CSSTest Weights W47") << QString("A") << 100 << 400;
+    QTest::addRow("W47 200") << QString("CSSTest Weights W47") << QString("A") << 200 << 400;
+    QTest::addRow("W47 300") << QString("CSSTest Weights W47") << QString("A") << 300 << 400;
+    QTest::addRow("W47 400") << QString("CSSTest Weights W47") << QString("A") << 400 << 400;
+    QTest::addRow("W47 500") << QString("CSSTest Weights W47") << QString("A") << 500 << 400;
+    QTest::addRow("W47 600") << QString("CSSTest Weights W47") << QString("A") << 600 << 700;
+    QTest::addRow("W47 700") << QString("CSSTest Weights W47") << QString("A") << 700 << 700;
+    QTest::addRow("W47 800") << QString("CSSTest Weights W47") << QString("A") << 800 << 700;
+    QTest::addRow("W47 900") << QString("CSSTest Weights W47") << QString("A") << 900 << 700;
 
-        bool res = false;
-        for (const FT_FaceSP &face : faces) {
-            // qDebug() << face->family_name;
-            if (face->style_flags == FT_STYLE_FLAG_ITALIC) {
-                res = true;
-                break;
-            }
-        }
-        QVERIFY2(res, QString("KoFontRegistry did not return a font with italics as requested.").toLatin1());
-    }
+    QTest::addRow("variable - test 100") << QString("Variable Test Axis Matching") << QString("O") << 100 << 100;
+    QTest::addRow("variable - test 300") << QString("Variable Test Axis Matching") << QString("O") << 300 << 300;
+    QTest::addRow("variable - test 400") << QString("Variable Test Axis Matching") << QString("O") << 400 << 400;
+    QTest::addRow("variable - test 700") << QString("Variable Test Axis Matching") << QString("O") << 700 << 700;
+    QTest::addRow("variable - test 900") << QString("Variable Test Axis Matching") << QString("O") << 900 << 900;
 }
+
+void TestSvgText::testWWSConverterWeight() {
+    QVector<int> lengths;
+    QFETCH(QString, fontFamily);
+    QFETCH(QString, testString);
+    QFETCH(int, requestedWeight);
+    QFETCH(int, expectedWeight);
+
+    KoCSSFontInfo info;
+    info.families = QStringList({fontFamily});
+    info.weight = requestedWeight;
+
+    const std::vector<FT_FaceSP> faces =
+        KoFontRegistry::instance()->facesForCSSValues(lengths, info, testString);
+
+    QVERIFY(!faces.empty());
+
+    FT_FaceSP first = faces.at(0);
+    hb_font_t_sp hbFont(hb_ft_font_create_referenced(first.data()));
+    float testedWeight = hb_style_get_value(hbFont.data(), HB_STYLE_TAG_WEIGHT);
+
+    QVERIFY2(qRound(testedWeight) == expectedWeight,
+             QString("Tested font does not have weight %1, instead %2, font-family: %3")
+                 .arg(QString::number(expectedWeight))
+                 .arg(QString::number(testedWeight))
+                 .arg(first->family_name)
+                 .toLatin1());
+}
+/**
+ * @brief TestSvgText::testWWSConverterSlant
+ *
+ * This currently tests whether if requesting regular, it returns regular,
+ * requesting italic returns italic, and requesting oblique also returns italic.
+ *
+ */
+void TestSvgText::testWWSConverterSlant_data() {
+    QTest::addColumn<QString>("fontFamily");
+    QTest::addColumn<QString>("testString");
+    QTest::addColumn<QFont::Style>("requestedMode");
+    QTest::addColumn<QFont::Style>("expectedMode");
+    QTest::addColumn<int>("requestedSlant");
+    QTest::addColumn<int>("expectedSlant");
+
+    QTest::addRow("regular") << QString("CSS Test Basic") << QString("A") << QFont::StyleNormal << QFont::StyleNormal << 0 << 0;
+    QTest::addRow("italic") << QString("CSS Test Basic") << QString("A") << QFont::StyleItalic << QFont::StyleItalic << 0 << -8;
+    QTest::addRow("oblique-get-italic") << QString("CSS Test Basic") << QString("A") << QFont::StyleOblique << QFont::StyleItalic << 0 << -8;
+
+    QTest::addRow("regular-oblique") << QString("Test Typographic RIBBI Family B") << QString("A") << QFont::StyleNormal << QFont::StyleNormal << 0 << 0;
+    QTest::addRow("oblique") << QString("Test Typographic RIBBI Family B") << QString("A") << QFont::StyleOblique << QFont::StyleOblique << 0 << -30;
+    QTest::addRow("italic-get-oblique") << QString("Test Typographic RIBBI Family B") << QString("A") << QFont::StyleItalic << QFont::StyleOblique << 0 << -30;
+
+    QTest::addRow("variable-regular") << QString("Variable Test Axis Matching") << QString("O") << QFont::StyleNormal << QFont::StyleNormal << 0 << 0;
+    // Tested mode is oblique when var contains both italic and oblique, this is because of a limitation in harfbuzz.
+    QTest::addRow("variable-italic") << QString("Variable Test Axis Matching") << QString("O") << QFont::StyleItalic << QFont::StyleOblique << -14 << -11;
+    QTest::addRow("variable-oblique") << QString("Variable Test Axis Matching") << QString("O") << QFont::StyleOblique << QFont::StyleOblique << -14 << -14;
+    QTest::addRow("variable-oblique-backslant") << QString("Variable Test Axis Matching") << QString("O") << QFont::StyleOblique << QFont::StyleOblique << 14 << 14;
+}
+
+void TestSvgText::testWWSConverterSlant() {
+    QVector<int> lengths;
+    QFETCH(QString, fontFamily);
+    QFETCH(QString, testString);
+    QFETCH(QFont::Style, requestedMode);
+    QFETCH(QFont::Style, expectedMode);
+    QFETCH(int, requestedSlant);
+    QFETCH(int, expectedSlant);
+
+    KoCSSFontInfo info;
+    info.families = QStringList({fontFamily});
+    info.slantMode = requestedMode;
+    info.slantValue = -requestedSlant;
+    info.autoSlant = false;
+
+    const std::vector<FT_FaceSP> faces =
+        KoFontRegistry::instance()->facesForCSSValues(lengths, info, testString);
+
+    QVERIFY(!faces.empty());
+
+    FT_FaceSP first = faces.at(0);
+    QFont::Style testedMode = KoFontRegistry::slantMode(first);
+    hb_font_t_sp hbFont(hb_ft_font_create_referenced(first.data()));
+    float testedSlant = hb_style_get_value(hbFont.data(), HB_STYLE_TAG_SLANT_ANGLE);
+
+    QVERIFY2(testedMode == expectedMode,
+             QString("Tested font does not have slant mode %1, instead %2, font-family: %3")
+                 .arg(QString::number(expectedMode))
+                 .arg(QString::number(testedMode))
+                 .arg(first->family_name)
+             .toLatin1());
+    QVERIFY2(qRound(testedSlant) == expectedSlant,
+             QString("Tested font does not have slant value %1, instead %2, font-family: %3")
+                 .arg(QString::number(expectedSlant))
+                 .arg(QString::number(testedSlant))
+                 .arg(first->family_name)
+             .toLatin1());
+}
+
+void TestSvgText::testWWSConverterWidth_data()
+{
+    QTest::addColumn<QString>("fontFamily");
+    QTest::addColumn<int>("requestedWidth");
+    QTest::addColumn<int>("expectedWidth");
+
+    QTest::addRow("test ultra-condensed") << QString("Test Width Family") << 50 << 50;
+    QTest::addRow("test extra-condensed") << QString("Test Width Family") << 63 << 50;
+    QTest::addRow("test condensed") << QString("Test Width Family") << 75 << 75;
+    QTest::addRow("test semi-condensed") << QString("Test Width Family") << 88 << 75;
+    QTest::addRow("test regular") << QString("Test Width Family") << 100 << 100;
+    QTest::addRow("test semi-expanded") << QString("Test Width Family") << 113 << 125;
+    QTest::addRow("test expanded") << QString("Test Width Family") << 125 << 125;
+    QTest::addRow("test extra-expanded") << QString("Test Width Family") << 150 << 200;
+    QTest::addRow("test ultra-expanded") << QString("Test Width Family") << 200 << 200;
+
+    QTest::addRow("variable - test ultra-condensed") << QString("Variable Test Axis Matching") << 50 << 50;
+    QTest::addRow("variable - test condensed") << QString("Variable Test Axis Matching") << 75 << 75;
+    QTest::addRow("variable - test regular") << QString("Variable Test Axis Matching") << 100 << 100;
+    QTest::addRow("variable - test expanded") << QString("Variable Test Axis Matching") << 125 << 125;
+    QTest::addRow("variable - test ultra-expanded") << QString("Variable Test Axis Matching") << 200 << 200;
+}
+
+void TestSvgText::testWWSConverterWidth()
+{
+    const QString testString("O");
+    QVector<int> lengths;
+    QFETCH(QString, fontFamily);
+    QFETCH(int, requestedWidth);
+    QFETCH(int, expectedWidth);
+
+    KoCSSFontInfo info;
+    info.families = QStringList({fontFamily});
+    info.width = requestedWidth;
+
+    const std::vector<FT_FaceSP> faces =
+        KoFontRegistry::instance()->facesForCSSValues(lengths, info, testString);
+
+    QVERIFY(!faces.empty());
+
+    FT_FaceSP first = faces.at(0);
+    hb_font_t_sp hbFont(hb_ft_font_create_referenced(first.data()));
+    float testedWidth = hb_style_get_value(hbFont.data(), HB_STYLE_TAG_WIDTH);
+
+    QVERIFY2(qRound(testedWidth) == expectedWidth,
+             QString("Tested font does not have width %1, instead %2, font-family: %3")
+                 .arg(QString::number(expectedWidth))
+                 .arg(QString::number(testedWidth))
+                 .arg(first->family_name)
+                 .toLatin1());
+}
+
+void TestSvgText::testWWSConverterFamilyNames_data()
+{
+    QTest::addColumn<QString>("requestedFamily");
+    QTest::addColumn<QString>("expectedFamily");
+    QTest::addColumn<QString>("expectedStyle");
+
+    /*
+     *  The following should select Font A. This is complicated by the fact that Font A has no typographic family, while B, C and D do,
+     *  which means it ought to select it by RIBBI family.
+     */
+    QTest::addRow("test typographic, ribbi same as typographic") << QString("Test Typographic Family") << QString("Test Typographic Family") << QString("A");
+    QTest::addRow("test typographic, ribbi same as typographic, NL locale") << QString("Test Typografische Familie") << QString("Test Typographic Family") << QString("A");
+
+    /**
+     * Test selecting the ribbi name
+     */
+    QTest::addRow("test typographic, ribbi unique") << QString("Test Typographic RIBBI Family B") << QString("Test Typographic Family") << QString("B");
+    /**
+     * This tests whether the font is filtered separately when size is selected.
+     */
+    QTest::addRow("test typographic, ribbi same as typo, size different") << QString("Test Typographic Family Full C") << QString("Test Typographic Family") << QString("Regular");
+    /**
+     * Test selecting the font with a wws name.
+     */
+    QTest::addRow("test typographic, wws unique") << QString("Test Typographic WWS Family D") << QString("Test Typographic WWS Family D") << QString("Bold");
+    QTest::addRow("test typographic, wws unique, NL locale") << QString("Test Typografische Familie WWS Familie D") << QString("Test Typographic WWS Family D") << QString("Bold");
+    /**
+     * Test selecting the font with a full name
+     */
+    QTest::addRow("test typographic, fullname") << QString("Test Typographic Family Full A") << QString("Test Typographic Family") << QString("A");
+
+    QTest::addRow("test family, JA locale") << QString("ＣＳＳテスト　フォント名") << QString("CSSTest FamilyName") << QString("Regular");
+    // Test true type collections.
+    QTest::addRow("test collection index") << QString("Test Collection Index B") << QString("Test Collection Index B") << QString("Regular");
+
+}
+
+void TestSvgText::testWWSConverterFamilyNames()
+{
+    const QMap<QString, qreal> axisSettings;
+    QVector<int> lengths;
+    QFETCH(QString, requestedFamily);
+    QFETCH(QString, expectedFamily);
+    QFETCH(QString, expectedStyle);
+
+    KoCSSFontInfo info;
+    info.families.append(requestedFamily);
+
+    const std::vector<FT_FaceSP> faces =
+        KoFontRegistry::instance()->facesForCSSValues(lengths, info);
+
+    QVERIFY(!faces.empty());
+
+    FT_FaceSP first = faces.at(0);
+
+    QVERIFY2(first->family_name == expectedFamily && first->style_name == expectedStyle,
+             QString("Incorrect font-family, expected %1 - %2, got %3 - %4")
+                 .arg(expectedFamily)
+                 .arg(expectedStyle)
+                 .arg(first->family_name)
+                 .arg(first->style_name)
+             .toLatin1());
+}
+
 /**
  * @brief TestSvgText::testFontSizeConfiguration
  *
@@ -1731,18 +2005,19 @@ void TestSvgText::testFontStyleSelection()
 void TestSvgText::testFontSizeConfiguration()
 {
     QString fontName = "Ahem";
+    KoCSSFontInfo info;
     qreal freetypefontfactor = 64.0;
-    QMap<QString, qreal> axisSettings;
 
     {
         QVector<int> lengths;
-        qreal sizePt = 15.0;
-        const std::vector<FT_FaceSP> faces = KoFontRegistry::instance()->facesForCSSValues({fontName}, lengths, axisSettings, QString(), 72, 72, sizePt);
+        info.size = 15.0;
+        info.families = QStringList({fontName});
+        const std::vector<FT_FaceSP> faces = KoFontRegistry::instance()->facesForCSSValues(lengths, info);
 
         int size = faces.front()->size->metrics.height;
-        QVERIFY2(size == (sizePt * freetypefontfactor),
+        QVERIFY2(size == (info.size * freetypefontfactor),
                  QString("Configured value for Ahem at 15 pt is not returning as %1, instead %2")
-                     .arg(QString::number(sizePt * freetypefontfactor))
+                     .arg(QString::number(info.size * freetypefontfactor))
                      .arg(QString::number(size))
                      .toLatin1());
     }
@@ -1755,10 +2030,11 @@ void TestSvgText::testFontSizeConfiguration()
     {
         QVector<qreal> testSizes;
         testSizes << 4.0 << 8.0 << 10.0 << 12.0;
-
+        info.families = QStringList({fontName});
         for (qreal sizePt : testSizes) {
             QVector<int> lengths;
-            const std::vector<FT_FaceSP> faces = KoFontRegistry::instance()->facesForCSSValues({fontName}, lengths, axisSettings, QString(), 72, 72, sizePt);
+            info.size = sizePt;
+            const std::vector<FT_FaceSP> faces = KoFontRegistry::instance()->facesForCSSValues(lengths, info, QString());
 
             // With 10.0, we mostly want to test that it returns a valid value.
             if (sizePt == 10.0) {
@@ -1780,10 +2056,11 @@ void TestSvgText::testFontSizeConfiguration()
 
     {
         QVector<int> lengths;
-        qreal sizePt = 15.0;
-        qreal fontSizeAdjust = 0.8;
+        info.size = 15.0;
+        info.fontSizeAdjust = 0.8;
+        info.families = QStringList({fontName});
         const std::vector<FT_FaceSP> faces =
-            KoFontRegistry::instance()->facesForCSSValues({fontName}, lengths, axisSettings, QString(), 72, 72, sizePt, fontSizeAdjust);
+            KoFontRegistry::instance()->facesForCSSValues(lengths, info);
 
         int size = faces.front()->size->metrics.height;
         QVERIFY2(size == 768,
@@ -2115,10 +2392,10 @@ void TestSvgText::testCssTextTransform()
     // This particular transformation also has a difference in characters between the before and after,
     // so let's test the positions too.
     QVector<QPair<int, int>> refPositions;
-    refPositions << QPair(0,0) << QPair(1,1) << QPair(2,2) << QPair(3,3) << QPair(4,4) << QPair(5,5)
-                 << QPair(6,6) << QPair(-1,7) << QPair(7,8) << QPair(8,9) << QPair(9,10)
-                 << QPair(10,11) << QPair(11,12) << QPair(12,13) << QPair(-1,14) << QPair(13,15)
-                 << QPair(14,16) << QPair(15,17) <<  QPair(16,18);
+    refPositions << qMakePair(0,0) << qMakePair(1,1) << qMakePair(2,2) << qMakePair(3,3) << qMakePair(4,4) << qMakePair(5,5)
+                 << qMakePair(6,6) << qMakePair(-1,7) << qMakePair(7,8) << qMakePair(8,9) << qMakePair(9,10)
+                 << qMakePair(10,11) << qMakePair(11,12) << qMakePair(12,13) << qMakePair(-1,14) << qMakePair(13,15)
+                 << qMakePair(14,16) << qMakePair(15,17) <<  qMakePair(16,18);
     QVERIFY2(positions == refPositions,
              QString("positions returned by Greek Tonos test number 5 are incorrect.").toLatin1());
 }
@@ -2194,9 +2471,10 @@ void TestSvgText::testTextWrap()
     }
 }
 /**
- * Test baseline alignment. Within CSS text this is defined in CSS3-Inline,
- * however, it was originally part of SVG 1.1, and we implement that version
- * as it has the clearest implementation explanation.
+ * Test baseline alignment. Within CSS text this is defined in CSS3-Inline-3,
+ * and we now implement this version. The main difference between the two is that
+ * SVG 1.1/XSL 1.1 there is one baseline table over the whole paragraph, while in
+ * CSS-inline, the baseline-table is calculated per-span.
  *
  * This relies on different font-sizes, because otherwise all the baseline tables
  * are exactly the same.
@@ -2207,9 +2485,219 @@ void TestSvgText::testTextBaselineAlignment()
     bool res = file.open(QIODevice::ReadOnly | QIODevice::Text);
     QVERIFY2(res, QString("Cannot open test svg file.").toLatin1());
 
-    SvgRenderTester t(file.readAll());
-    t.setFuzzyThreshold(5);
-    t.test_standard("test-text-baseline-alignment", QSize(90, 51), 72.0);
+    SvgTester t(file.readAll());
+    t.parser().setResolution(QRectF(0, 0, 90, 51) /* px */, 72 /* ppi */);
+    t.run();
+
+    KoSvgTextShape *textShape = dynamic_cast<KoSvgTextShape*>(t.findShape("testRect"));
+
+    QVERIFY(textShape);
+
+    QLineF caret;
+    QColor color;
+    textShape->cursorForPos(0, caret, color);
+
+    QLine testCaret = QLine(QPoint(6,38),QPoint(6,23));
+    QVERIFY2(caret.toLine() == testCaret,
+             QString("Wrong caret for position 0").toLatin1());
+
+    textShape->cursorForPos(3, caret, color);
+    testCaret = QLine(QPoint(56,38),QPoint(56,8));
+    QVERIFY2(caret.toLine() == testCaret,
+             QString("Wrong caret for position 3").toLatin1());
+
+    textShape->cursorForPos(5, caret, color);
+    testCaret = QLine(QPoint(80,28),QPoint(80,23));
+    QVERIFY2(caret.toLine() == testCaret,
+             QString("Wrong caret for position 5").toLatin1());
+
+    textShape->cursorForPos(7, caret, color);
+    testCaret = QLine(QPoint(86,31),QPoint(86,26));
+    QVERIFY2(caret.toLine() == testCaret,
+             QString("Wrong caret for position 7").toLatin1());
+}
+
+void TestSvgText::testFontMetrics_data()
+{
+    QTest::addColumn<QString>("fontFamily");
+    QTest::addColumn<qreal>("fontSize");
+    QTest::addColumn<bool>("isHorizontal");
+    QTest::addColumn<qint32>("expectedFontSize");
+    QTest::addColumn<qint32>("expectedXHeight");
+    QTest::addColumn<qint32>("expectedCapHeight");
+    QTest::addColumn<qint32>("expectedSpace");
+    QTest::addColumn<qint32>("expectedAscender");
+    QTest::addColumn<qint32>("expectedDescender");
+    QTest::addColumn<qint32>("expectedIdeographic");
+    QTest::addColumn<qint32>("expectedHanging");
+    QTest::addColumn<qint32>("expectedSubscript");
+    QTest::addColumn<qint32>("expectedSuperscript");
+
+    QTest::addRow("test Deja Vu Sans") << QString("Deja Vu Sans") << 12.0 << true << 768 << 420 << 559 << 384 << 584 << -185 << -181 << 460 << 107 << 369;
+    QTest::addRow("test Baseline test font") << QString("Baseline Test") << 12.0 << true << 768 << 384 << 538 << 384 << 614 << -154 << -154 << 460 << 58 << 269;
+    QTest::addRow("test Baseline test font vertical") << QString("Baseline Test") << 12.0 << false << 768 << 384 << 538 << 384 << 614 << -154 << -154 << 460 << 58 << 269;
+}
+
+/**
+ * @brief TestSvgText::testFontMetrics
+ * This tests if we're able to retrieve or fall back on correct fontsize metrics.
+ */
+void TestSvgText::testFontMetrics()
+{
+    QFETCH(QString, fontFamily);
+    QFETCH(qreal, fontSize);
+    QFETCH(bool, isHorizontal);
+
+    KoCSSFontInfo info;
+    info.families = QStringList({fontFamily});
+    info.size = fontSize;
+
+    KoSvgText::FontMetrics metrics = KoFontRegistry::instance()->fontMetricsForCSSValues(info, isHorizontal);
+
+    QFETCH(qint32, expectedFontSize);
+    QVERIFY2(expectedFontSize == metrics.fontSize,
+             QString("Font Size not returning as %1, instead %2")
+             .arg(QString::number(expectedFontSize))
+             .arg(QString::number(metrics.fontSize))
+             .toLatin1());
+
+    QFETCH(qint32, expectedXHeight);
+    QVERIFY2(expectedXHeight == metrics.xHeight,
+             QString("XHeight not returning as %1, instead %2")
+             .arg(QString::number(expectedXHeight))
+             .arg(QString::number(metrics.xHeight))
+             .toLatin1());
+
+    QFETCH(qint32, expectedCapHeight);
+    QVERIFY2(expectedCapHeight == metrics.capHeight,
+             QString("CapHeight not returning as %1, instead %2")
+             .arg(QString::number(expectedCapHeight))
+             .arg(QString::number(metrics.capHeight))
+             .toLatin1());
+
+    QFETCH(qint32, expectedSpace);
+    QVERIFY2(expectedSpace == metrics.spaceAdvance,
+             QString("Space advance not returning as %1, instead %2")
+             .arg(QString::number(expectedSpace))
+             .arg(QString::number(metrics.spaceAdvance))
+             .toLatin1());
+
+    QFETCH(qint32, expectedAscender);
+    QVERIFY2(expectedAscender == metrics.ascender,
+             QString("Ascender not returning as %1, instead %2")
+             .arg(QString::number(expectedAscender))
+             .arg(QString::number(metrics.ascender))
+             .toLatin1());
+
+    QFETCH(qint32, expectedDescender);
+    QVERIFY2(expectedDescender == metrics.descender,
+             QString("Descender not returning as %1, instead %2")
+             .arg(QString::number(expectedDescender))
+             .arg(QString::number(metrics.descender))
+             .toLatin1());
+
+    QFETCH(qint32, expectedIdeographic);
+    QVERIFY2(expectedIdeographic == metrics.ideographicUnderBaseline,
+             QString("Ideographic not returning as %1, instead %2")
+             .arg(QString::number(expectedIdeographic))
+             .arg(QString::number(metrics.ideographicUnderBaseline))
+             .toLatin1());
+
+    QFETCH(qint32, expectedHanging);
+    QVERIFY2(expectedHanging == metrics.hangingBaseline,
+             QString("Hanging not returning as %1, instead %2")
+             .arg(QString::number(expectedHanging))
+             .arg(QString::number(metrics.hangingBaseline))
+             .toLatin1());
+
+    QFETCH(qint32, expectedSubscript);
+    QVERIFY2(expectedSubscript == metrics.subScriptOffset.second,
+             QString("Subscript not returning as %1, instead %2")
+             .arg(QString::number(expectedSubscript))
+             .arg(QString::number(metrics.subScriptOffset.second))
+             .toLatin1());
+
+    QFETCH(qint32, expectedSuperscript);
+    QVERIFY2(expectedSuperscript == metrics.superScriptOffset.second,
+             QString("Superscript not returning as %1, instead %2")
+             .arg(QString::number(expectedSuperscript))
+             .arg(QString::number(metrics.superScriptOffset.second))
+             .toLatin1());
+}
+
+void TestSvgText::testFontRelativeUnits_data()
+{
+    QTest::addColumn<QString>("fontFamily");
+    QTest::addColumn<qreal>("parentSize");
+    QTest::addColumn<int>("parentProperty");
+    QTest::addColumn<int>("childProperty");
+    QTest::addColumn<int>("requestedUnit");
+    QTest::addColumn<qreal>("expectedSize");
+
+    QTest::addRow("test font-size em") << "Deja Vu Sans" << 12.0 << int(KoSvgTextProperties::FontSizeId) << int(KoSvgTextProperties::FontSizeId) << int(KoSvgText::CssLengthPercentage::Em) << 6.0;
+    QTest::addRow("test font-size ex") << "Deja Vu Sans" << 12.0 << int(KoSvgTextProperties::FontSizeId) << int(KoSvgTextProperties::FontSizeId) << int(KoSvgText::CssLengthPercentage::Ex) << 3.28125;
+    QTest::addRow("test font-size cap") << "Deja Vu Sans" << 12.0 << int(KoSvgTextProperties::FontSizeId) << int(KoSvgTextProperties::FontSizeId) << int(KoSvgText::CssLengthPercentage::Cap) << 4.36719;
+    QTest::addRow("test font-size ch") << "Deja Vu Sans" << 12.0 << int(KoSvgTextProperties::FontSizeId) << int(KoSvgTextProperties::FontSizeId) << int(KoSvgText::CssLengthPercentage::Ch) << 3.0;
+    QTest::addRow("test font-size ic") << "Deja Vu Sans" << 12.0 << int(KoSvgTextProperties::FontSizeId) << int(KoSvgTextProperties::FontSizeId) << int(KoSvgText::CssLengthPercentage::Ic) << 6.0;
+    QTest::addRow("test font-size lh") << "Deja Vu Sans" << 12.0 << int(KoSvgTextProperties::FontSizeId) << int(KoSvgTextProperties::FontSizeId) << int(KoSvgText::CssLengthPercentage::Lh) << 7.21094;
+
+    QTest::addRow("test line-height lh") << "Deja Vu Sans" << 12.0 << int(KoSvgTextProperties::LineHeightId) << int(KoSvgTextProperties::LineHeightId) << int(KoSvgText::CssLengthPercentage::Lh) << 6.0;
+    QTest::addRow("test line-height font-size lh") << "Deja Vu Sans" << 12.0 << int(KoSvgTextProperties::LineHeightId) << int(KoSvgTextProperties::FontSizeId) << int(KoSvgText::CssLengthPercentage::Lh) << 6.0;
+}
+
+void TestSvgText::testFontRelativeUnits()
+{
+    QFETCH(QString, fontFamily);
+    QFETCH(qreal, parentSize);
+    QFETCH(int, parentProperty);
+    QFETCH(int, childProperty);
+    QFETCH(int, requestedUnit);
+    QFETCH(qreal, expectedSize);
+
+    KoSvgTextProperties props;
+    const QStringList families = {fontFamily};
+    props.setProperty(KoSvgTextProperties::FontFamiliesId, families);
+    KoSvgText::CssLengthPercentage size(parentSize);
+
+    if (KoSvgTextProperties::PropertyId(parentProperty) == KoSvgTextProperties::LineHeightId) {
+        KoSvgText::LineHeightInfo lhInfo;
+        lhInfo.isNormal = false;
+        lhInfo.isNumber = false;
+        lhInfo.length = size;
+        props.setProperty(KoSvgTextProperties::PropertyId(parentProperty), QVariant::fromValue(lhInfo));
+    } else {
+        props.setProperty(KoSvgTextProperties::PropertyId(parentProperty), QVariant::fromValue(size));
+    }
+
+    KoSvgTextProperties childProps;
+    size.value = 0.5;
+    size.unit = KoSvgText::CssLengthPercentage::UnitType(requestedUnit);
+
+    const KoSvgTextProperties::PropertyId testProperty = KoSvgTextProperties::PropertyId(childProperty);
+    if (testProperty == KoSvgTextProperties::LineHeightId) {
+        KoSvgText::LineHeightInfo lhInfo;
+        lhInfo.isNormal = false;
+        lhInfo.isNumber = false;
+        lhInfo.length = size;
+        childProps.setProperty(testProperty, QVariant::fromValue(lhInfo));
+    } else {
+        childProps.setProperty(testProperty, QVariant::fromValue(size));
+    }
+
+    childProps.inheritFrom(props, true);
+    KoSvgText::CssLengthPercentage test;
+    if (testProperty == KoSvgTextProperties::LineHeightId) {
+        test = childProps.propertyOrDefault(testProperty).value<KoSvgText::LineHeightInfo>().length;
+    } else {
+        test = childProps.propertyOrDefault(testProperty).value<KoSvgText::CssLengthPercentage>();
+    }
+
+    // Using fabs(diff) here because qfuzzycompare and qdebug do not give enough info about the precise error.
+    QVERIFY2(fabs(test.value - expectedSize) < 0.00001,
+             QString("Inherited font size not returning as %1, instead %2")
+             .arg(QString::number(expectedSize))
+             .arg(QString::number(test.value))
+             .toLatin1());
 }
 
 /**
@@ -2544,7 +3032,7 @@ void TestSvgText::testTextCleanUp()
     el1.text = "The quick brown fox";
     KoSvgTextContentElement el2;
     el2.text = " jumps over the";
-    el2.properties.setProperty(KoSvgTextProperties::FontStyleId, QFont::StyleItalic);
+    el2.properties.setProperty(KoSvgTextProperties::FontStyleId, QVariant::fromValue(KoSvgText::CssFontStyleData(QFont::StyleItalic)));
     KoSvgTextContentElement el3;
     el3.text =  " lazy dog.";
     auto child1 = forest.insert(childEnd(root), el1);
@@ -2556,13 +3044,13 @@ void TestSvgText::testTextCleanUp()
     QCOMPARE(depth(forest), 2);
 
     // test merging siblings with the same properties.
-    child1->properties.setProperty(KoSvgTextProperties::FontStyleId, QFont::StyleItalic);
+    child1->properties.setProperty(KoSvgTextProperties::FontStyleId, QVariant::fromValue(KoSvgText::CssFontStyleData(QFont::StyleItalic)));
     KoSvgTextShape::Private::cleanUp(forest);
     QCOMPARE(size(forest), 3);
     QCOMPARE(depth(forest), 2);
 
     // test merging children with parents.
-    child2->properties.setProperty(KoSvgTextProperties::FontStyleId, QFont::StyleItalic);
+    child2->properties.setProperty(KoSvgTextProperties::FontStyleId, QVariant::fromValue(KoSvgText::CssFontStyleData(QFont::StyleItalic)));
     KoSvgTextShape::Private::cleanUp(forest);
     QCOMPARE(size(forest), 1);
     QCOMPARE(depth(forest), 1);
@@ -2588,6 +3076,53 @@ void TestSvgText::testTextRichTextMerge()
 
     QVERIFY(test.hasProperty(KoSvgTextProperties::FontWeightId));
     QVERIFY(!test.hasProperty(KoSvgTextProperties::FillId));
+}
+
+void TestSvgText::testBcp47Parsing_data()
+{
+    QTest::addColumn<QString>("tag");
+    QTest::addColumn<QString>("language");
+    QTest::addColumn<QString>("script");
+    QTest::addColumn<QString>("region");
+    QTest::addColumn<QString>("variant");
+    QTest::addColumn<QString>("extension");
+    QTest::addColumn<QString>("privateuse");
+
+    QTest::addRow("basic english") << QString("en") << QString("en") << QString() << QString() << QString() << QString() << QString();
+
+    QTest::addRow("brazilian portuguese -- region") << QString("pt-BR") << QString("pt") << QString() << QString("BR") << QString() << QString() << QString();
+
+    QTest::addRow("spanish latin america -- number region") << QString("es-419") << QString("es") << QString() << QString("419") << QString() << QString() << QString();
+
+    QTest::addRow("romansh sursilvan -- variant") << QString("rm-sursilv") << QString("rm") << QString() << QString() << QString("sursilv") << QString() << QString();
+
+    QTest::addRow("treditional german orthography -- variant") << QString("de-1901") << QString("de") << QString() << QString() << QString("1901") << QString() << QString();
+
+    QTest::addRow("cantonese, traditional han, hongkong -- script and region") << QString("yue-Hant-HK") << QString("yue") << QString("Hant") << QString("HK") << QString() << QString() << QString();
+
+    QTest::addRow("swiss german, canton zurich -- extension") << QString("gsw-u-sd-chzh") << QString("gsw") << QString() << QString() << QString() << QString("u-sd-chzh") << QString();
+
+    QTest::addRow("dutch, blabla private tag -- private use") << QString("nl-x-blabla") << QString("nl") << QString() << QString() << QString() << QString() << QString("x-blabla");
+}
+
+void TestSvgText::testBcp47Parsing()
+{
+    QFETCH(QString, tag);
+    QFETCH(QString, language);
+    QFETCH(QString, script);
+    QFETCH(QString, region);
+    QFETCH(QString, variant);
+    QFETCH(QString, extension);
+    QFETCH(QString, privateuse);
+
+    const KoWritingSystemUtils::Bcp47Locale bcp = KoWritingSystemUtils::parseBcp47Locale(tag);
+
+    QVERIFY(bcp.languageTags.join("-") == language);
+    QVERIFY(bcp.scriptTag == script);
+    QVERIFY(bcp.regionTag == region);
+    QVERIFY(bcp.variantTags.join("-") == variant);
+    QVERIFY(bcp.extensionTags.join("-") == extension);
+    QVERIFY(bcp.privateUseTags.join("-") == privateuse);
 }
 
 #include "kistest.h"

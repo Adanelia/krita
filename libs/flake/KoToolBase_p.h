@@ -13,7 +13,6 @@
 #include "KoShapeController.h"
 #include <QHash>
 #include <QWidget>
-#include <QString>
 #include <QPointer>
 #include <string.h> // for the qt version check
 
@@ -61,6 +60,11 @@ public:
         }
     }
 
+    struct ToolCanvasResources {
+        QHash<int, KoAbstractCanvasResourceInterfaceSP> abstractResources;
+        QHash<int, KoDerivedResourceConverterSP> converters;
+    };
+
     QList<QPointer<QWidget> > optionWidgets; ///< the optionwidgets associated with this tool
     bool optionWidgetsCreated {false};
     QCursor currentCursor;
@@ -71,6 +75,9 @@ public:
     bool maskSyntheticEvents{false}; ///< Whether this tool masks synthetic events
     bool isActivated;
     QRectF lastDecorationsRect;
+    bool isOpacityPresetMode{false}; ///< Whether the opacity is preset or tool
+    ToolCanvasResources toolCanvasResources;
+
 };
 
 #endif

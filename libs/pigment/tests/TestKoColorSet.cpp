@@ -58,7 +58,7 @@ void TestKoColorSet::testLoadACT()
     QCOMPARE(set.paletteType(), KoColorSet::ACT);
     QVERIFY(set.valid());
 
-    QCOMPARE(set.colorCount(), 258);
+    QCOMPARE(set.colorCount(), 257);
 
     QFile("test.act").remove();
 
@@ -260,7 +260,8 @@ void TestKoColorSet::testLoadACB()
     QVERIFY(set.load(KisGlobalResourcesInterface::instance()));
     QCOMPARE(set.paletteType(), KoColorSet::ACB);
 
-    QCOMPARE(set.colorCount(), 17);
+    QCOMPARE(set.colorCount(), 23);
+    QCOMPARE(set.name(), "test");
 
     set.setFilename("test.acb");
     QVERIFY(set.save());

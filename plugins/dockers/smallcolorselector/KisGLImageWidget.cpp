@@ -9,6 +9,7 @@
 #include <QPainter>
 #include <QFile>
 #include <QResizeEvent>
+#include <QVector3D>
 #include "kis_debug.h"
 #include <config-hdr.h>
 #include <opengl/kis_opengl.h>
@@ -38,20 +39,18 @@ inline void rectToTexCoords(QVector2D* texCoords, const QRectF &rc)
 }
 
 KisGLImageWidget::KisGLImageWidget(QWidget *parent)
-    : KisGLImageWidget(KisSurfaceColorSpace::sRGBColorSpace, parent)
+    : KisGLImageWidget(KisSurfaceColorSpaceWrapper::sRGBColorSpace, parent)
 {
 }
 
-KisGLImageWidget::KisGLImageWidget(KisSurfaceColorSpace colorSpace,
+KisGLImageWidget::KisGLImageWidget(const KisSurfaceColorSpaceWrapper &colorSpace,
                                    QWidget *parent)
     : QOpenGLWidget(parent),
       m_texture(QOpenGLTexture::Target2D)
 {
     Q_UNUSED(colorSpace);
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
     setTextureFormat(GL_RGBA16F);
-#endif
 
 #ifdef HAVE_HDR
     setTextureColorSpace(colorSpace);

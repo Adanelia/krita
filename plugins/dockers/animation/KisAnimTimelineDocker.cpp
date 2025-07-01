@@ -16,6 +16,7 @@
 #include "QToolButton"
 #include "QMenu"
 #include "QWidgetAction"
+#include <QActionGroup>
 
 #include "krita_utils.h"
 #include "kis_canvas2.h"
@@ -32,10 +33,12 @@
 #include "animation/KisFrameDisplayProxy.h"
 #include "KisAnimUtils.h"
 #include "kis_image_config.h"
+#include "commands_new/KisImageAnimSettingCommand.h"
 #include "kis_keyframe_channel.h"
 #include "kis_image.h"
 #include "KisPart.h"
 #include "KisPlaybackEngine.h"
+#include "kis_processing_applicator.h"
 
 #include "KisAnimTimelineFramesModel.h"
 #include "KisAnimTimelineFramesView.h"
@@ -436,11 +439,11 @@ void KisAnimTimelineDocker::setCanvas(KoCanvasBase * canvas)
 
         m_d->titlebar->volumeSlider->setValue(m_d->framesModel->audioVolume() * 100.0);
 
-        connect(m_d->titlebar->sbFrameRate, SIGNAL(valueChanged(int)), m_d->canvas->image()->animationInterface(), SLOT(setFramerate(int)));
         connect(m_d->canvas->image()->animationInterface(), SIGNAL(sigFramerateChanged()), SLOT(handleFrameRateChange()));
 
-        connect(m_d->titlebar->sbStartFrame, SIGNAL(valueChanged(int)), m_d->canvas->image()->animationInterface(), SLOT(setDocumentRangeStartFrame(int)));
-        connect(m_d->titlebar->sbEndFrame, SIGNAL(valueChanged(int)), m_d->canvas->image()->animationInterface(), SLOT(setDocumentRangeEndFrame(int)));
+        connect(m_d->titlebar->sbFrameRate, SIGNAL(valueChanged(int)), this, SLOT(setImageAnimSettings()));
+        connect(m_d->titlebar->sbStartFrame, SIGNAL(valueChanged(int)), this, SLOT(setImageAnimSettings()));
+        connect(m_d->titlebar->sbEndFrame, SIGNAL(valueChanged(int)), this, SLOT(setImageAnimSettings()));
 
         connect(m_d->canvas->image()->animationInterface(), &KisImageAnimationInterface::sigDocumentRangeChanged, this, [this]() {
             if (!m_d->canvas || !m_d->canvas->image()) return;
@@ -453,7 +456,11 @@ void KisAnimTimelineDocker::setCanvas(KoCanvasBase * canvas)
             m_d->titlebar->sbStartFrame->setValue(start);
             m_d->titlebar->sbEndFrame->setValue(end);
 
-            m_d->framesView->slotFitViewToFrameRange(0, end); // TODO: fit from start to end, instead of 0 to end.
+            //Auto zoom Timeline to new document playback range..
+            KisConfig cfg(true);
+            if (cfg.autoZoomTimelineToPlaybackRange()) {
+                m_d->framesView->slotFitViewToFrameRange(0, end); // TODO: fit from start to end, instead of 0 to end.
+            }
         });
 
         connect(m_d->canvas->animationState(), SIGNAL(sigFrameChanged()), this, SLOT(updateFrameRegister()));
@@ -483,6 +490,28 @@ void KisAnimTimelineDocker::handleThemeChange()
     }
 }
 
+void KisAnimTimelineDocker::setImageAnimSettings()
+{
+    if (!m_d->canvas || !m_d->canvas->image()) return;
+
+    KisImageAnimSettingCommand::Settings settings = {
+        m_d->titlebar->sbFrameRate->value(),
+        m_d->titlebar->sbStartFrame->value(),
+        m_d->titlebar->sbEndFrame->value()
+    };
+
+    KisImageAnimSettingCommand *undoCommand = new KisImageAnimSettingCommand(m_d->canvas->image()->animationInterface(), settings);
+
+    //KisProcessingApplicator::applyCommand(undoCommand);
+    QScopedPointer<KisProcessingApplicator> applicator(
+        new KisProcessingApplicator(m_d->canvas->image(), 0, KisProcessingApplicator::NONE,
+                                    KisImageSignalVector(),
+                                    undoCommand->text(),
+                                    0, undoCommand->id()));
+    applicator->applyCommand(undoCommand);
+    applicator->end();
+}
+
 void KisAnimTimelineDocker::updateFrameCache()
 {
     m_d->framesModel->setFrameCache(m_d->canvas->frameCache());
@@ -502,6 +531,10 @@ void KisAnimTimelineDocker::updateFrameRegister()
 
 void KisAnimTimelineDocker::updatePlaybackStatistics()
 {
+    if (!m_d->playbackEngine) return;
+
+    QString playbackEngineClass = m_d->playbackEngine->metaObject()->className();
+
     qreal effectiveFps = 0.0;
     qreal realFps = 0.0;
     qreal framesDropped = 0.0;
@@ -515,7 +548,6 @@ void KisAnimTimelineDocker::updatePlaybackStatistics()
         isPlaying = effectiveFps > 0.0;
     }
 
-
     KisConfig cfg(true);
     const bool shouldDropFrames = cfg.animationDropFrames();
 
@@ -525,20 +557,25 @@ void KisAnimTimelineDocker::updatePlaybackStatistics()
 
     QString actionText;
     if (!isPlaying) {
-        actionText = QString("%1 (%2) \n%3")
+        actionText = QString("%1 (%2)\n"
+                             "%3\n"
+                             "[PlaybackEngine: %4]")
             .arg(KisAnimUtils::dropFramesActionName)
             .arg(KritaUtils::toLocalizedOnOff(shouldDropFrames))
-            .arg(i18n("Enable to preserve playback timing."));
+            .arg(i18n("Enable to preserve playback timing."))
+            .arg(playbackEngineClass);
     } else {
         actionText = QString("%1 (%2)\n"
                        "%3\n"
                        "%4\n"
-                       "%5")
+                       "%5\n"
+                       "[PlaybackEngine: %6]")
             .arg(KisAnimUtils::dropFramesActionName)
             .arg(KritaUtils::toLocalizedOnOff(shouldDropFrames))
                          .arg(i18n("Effective FPS:\t%1", QString::number(effectiveFps, 'f', 1)))
             .arg(i18n("Real FPS:\t%1", QString::number(realFps, 'f', 1)))
-            .arg(i18n("Frames dropped:\t%1\%", QString::number(framesDropped * 100, 'f', 1)));
+            .arg(i18n("Frames dropped:\t%1\%", QString::number(framesDropped * 100, 'f', 1)))
+            .arg(playbackEngineClass);
     }
 
     /**

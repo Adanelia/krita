@@ -27,6 +27,7 @@
 #include "kis_action_registry.h"
 #include "KoToolFactoryBase.h"
 #include "kis_assert.h"
+#include "KoCanvasResourceProvider.h"
 
 #include <krita_container_utils.h>
 
@@ -354,6 +355,16 @@ QString KoToolManager::activeToolId() const
     return d->canvasData->activeToolId;
 }
 
+void KoToolManager::setConverter(KoDerivedResourceConverterSP converter, KoToolBase *tool)
+{
+    tool->setConverter(converter);
+}
+
+void KoToolManager::setAbstractResource(KoAbstractCanvasResourceInterfaceSP abstractResource, KoToolBase *tool)
+{
+    tool->setAbstractResource(abstractResource);
+}
+
 
 KoToolManager::Private *KoToolManager::priv()
 {
@@ -383,6 +394,7 @@ CanvasData *KoToolManager::Private::createCanvasData(KoCanvasController *control
         KoToolBase* tool = createTool(controller, toolAction);
         if (tool) { // only if a real tool was created
             toolsHash.insert(tool->toolId(), tool);
+            Q_EMIT q->createOpacityResource(tool->isOpacityPresetMode(), tool);
         }
     }
 
@@ -442,6 +454,20 @@ void KoToolManager::Private::connectActiveTool()
                 q, SIGNAL(changedStatusText(QString)));
         connect(canvasData->activeTool, SIGNAL(textModeChanged(bool)),
                 q, SIGNAL(textModeChanged(bool)));
+
+        {
+            KoCanvasResourceProvider *resourceManager = canvasData->canvas->canvas()->resourceManager();
+
+            const QHash<int, KoAbstractCanvasResourceInterfaceSP> abstractResources =
+                canvasData->activeTool->toolAbstractResources();
+            const QHash<int, KoDerivedResourceConverterSP> converters = canvasData->activeTool->toolConverters();
+            for (KoAbstractCanvasResourceInterfaceSP abstractResource : abstractResources) {
+                resourceManager->setAbstractResource(abstractResource);
+            }
+            for (KoDerivedResourceConverterSP converter : converters) {
+                resourceManager->addDerivedResourceConverter(converter);
+            }
+        }
     }
 
     // we expect the tool to Q_EMIT a cursor on activation.
@@ -453,6 +479,21 @@ void KoToolManager::Private::connectActiveTool()
 void KoToolManager::Private::disconnectActiveTool()
 {
     if (canvasData->activeTool) {
+        {
+            KoCanvasResourceProvider *resourceManager = canvasData->canvas->canvas()->resourceManager();
+
+            const QList<int> abstractKeys = canvasData->activeTool->toolAbstractResources().keys();
+            const QList<int> derivedKeys = canvasData->activeTool->toolConverters().keys();
+            for (int key : abstractKeys) {
+                if (resourceManager->hasAbstractResource(key))
+                    resourceManager->removeAbstractResource(key);
+            }
+            for (int key : derivedKeys) {
+                if (resourceManager->hasDerivedResourceConverter(key))
+                    resourceManager->removeDerivedResourceConverter(key);
+            }
+        }
+
         canvasData->deactivateToolActions();
         // repaint the decorations before we deactivate the tool as it might deleted
         // data needed for the repaint
@@ -488,11 +529,13 @@ void KoToolManager::Private::switchTool(const QString &id)
         return;
 
     disconnectActiveTool();
+
     if (canvasData->activeTool) {
         canvasData->mostRecentTools.prepend(canvasData->activeTool);
     }
     canvasData->activeTool = tool;
     canvasData->mostRecentTools.removeOne(tool);
+
     connectActiveTool();
     postSwitchTool();
 }
@@ -521,15 +564,11 @@ void KoToolManager::Private::postSwitchTool()
             && canvasData->activeTool->canvas()->shapeManager()) {
         KoSelection *selection = canvasData->activeTool->canvas()->shapeManager()->selection();
         Q_ASSERT(selection);
-#if QT_VERSION >= QT_VERSION_CHECK(5,14,0)
         QList<KoShape *> shapesDelegatesList = selection->selectedEditableShapesAndDelegates();
         if (!shapesDelegatesList.isEmpty()) {
             shapesToOperateOn = QSet<KoShape*>(shapesDelegatesList.begin(),
                                                shapesDelegatesList.end());
         }
-#else
-        shapesToOperateOn = QSet<KoShape*>::fromList(selection->selectedEditableShapesAndDelegates());
-#endif
     }
 
     if (canvasData->canvas->canvas()) {

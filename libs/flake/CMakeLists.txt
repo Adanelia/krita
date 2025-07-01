@@ -6,6 +6,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/libs/flake/svg
     ${CMAKE_SOURCE_DIR}/libs/flake/text
     ${CMAKE_SOURCE_DIR}/libs/flake/xsimd
+    ${CMAKE_SOURCE_DIR}/libs/flake/resources
     ${CMAKE_BINARY_DIR}/libs/flake
 )
 
@@ -21,7 +22,7 @@ endif()
 # generate krita_xsimd_macos_workaround.h
 configure_file(krita_xsimd_macos_workaround.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/krita_xsimd_macos_workaround.h)
 
-if(HAVE_XSIMD AND NOT DISABLE_CLIP_MASK_PAINTER_ON_MACOS)
+if(NOT DISABLE_CLIP_MASK_PAINTER_ON_MACOS)
     ko_compile_for_all_implementations(__per_arch_alpha_applicator_factory_objs xsimd/KoClipMaskApplicatorFactoryImpl.cpp)
 else()
     set(__per_arch_alpha_applicator_factory_objs xsimd/KoClipMaskApplicatorFactoryImpl.cpp)
@@ -34,6 +35,7 @@ set(kritaflake_SRCS
     KoResourceManager_p.cpp
     KoDerivedResourceConverter.cpp
     KoActiveCanvasResourceDependency.cpp
+    KoAbstractCanvasResourceInterface.cpp
     KoResourceUpdateMediator.cpp
     KoCanvasResourceProvider.cpp
     KoDocumentResourceManager.cpp
@@ -233,9 +235,21 @@ set(kritaflake_SRCS
     text/lager/TextIndentModel.cpp
     text/lager/TabSizeModel.cpp
     text/lager/TextTransformModel.cpp
+    text/lager/CssFontStyleModel.cpp
+    text/lager/FontVariantLigaturesModel.cpp
+    text/lager/FontVariantNumericModel.cpp
+    text/lager/FontVariantEastAsianModel.cpp
+    text/KoFFWWSConverter.cpp
+    text/KoFontChangeTracker.cpp
+    text/KoWritingSystemUtils.cpp
+    text/KoFontGlyphModel.cpp
+    text/KoOpenTypeFeatureInfoFactory.cpp
+    text/data/KoUnicodeBlockData.cpp
 
     resources/KoSvgSymbolCollectionResource.cpp
     resources/KoGamutMask.cpp
+    resources/KoFontFamily.cpp
+    resources/KoFontStorage.cpp
 
     FlakeDebug.cpp
     tests/MockShapes.cpp
@@ -262,6 +276,7 @@ target_include_directories(kritaflake
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/tools>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/svg>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/text>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/resources>
 )
 
 set_target_properties(libraqm PROPERTIES POSITION_INDEPENDENT_CODE ON)

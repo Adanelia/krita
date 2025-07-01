@@ -4,6 +4,7 @@
  *  SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+#include <QVector3D>
 #include "kis_tool_transform_config_widget.h"
 
 #include <kis_icon.h>
@@ -64,9 +65,9 @@ KisToolTransformConfigWidget::KisToolTransformConfigWidget(TransformTransactionP
     granularityPreview->addItems(granularityValues);
     granularityPreview->setCurrentIndex(2);
 
-    connect(changeGranularity,SIGNAL(currentIndexChanged(QString)),
+    connect(changeGranularity,SIGNAL(currentTextChanged(QString)),
             this,SLOT(slotGranularityChanged(QString)));
-    connect(granularityPreview, SIGNAL(currentIndexChanged(QString)),
+    connect(granularityPreview, SIGNAL(currentTextChanged(QString)),
             this,SLOT(slotPreviewGranularityChanged(QString)));
 
     // Init Filter  combo
@@ -121,8 +122,8 @@ KisToolTransformConfigWidget::KisToolTransformConfigWidget(TransformTransactionP
 
 
     // initialize values for free transform sliders
-    shearXBox->setSuffix(QChar(Qt::Key_Percent));
-    shearYBox->setSuffix(QChar(Qt::Key_Percent));
+    shearXBox->setSuffix(QStringLiteral("%"));
+    shearYBox->setSuffix(QStringLiteral("%"));
     shearXBox->setRange(-500, 500, 2);
     shearYBox->setRange(-500, 500, 2);
     shearXBox->setSingleStep(1);
@@ -156,7 +157,7 @@ KisToolTransformConfigWidget::KisToolTransformConfigWidget(TransformTransactionP
 
     cameraHeightBox->setRange(1, 20000, 2);
 
-    connect(m_rotationCenterButtons, SIGNAL(buttonPressed(int)), this, SLOT(slotRotationCenterChanged(int)));
+    connect(m_rotationCenterButtons, SIGNAL(idPressed(int)), this, SLOT(slotRotationCenterChanged(int)));
     connect(btnTransformAroundPivotPoint, SIGNAL(clicked(bool)), this, SLOT(slotTransformAroundRotationCenter(bool)));
 
     // Init Free Transform Values
@@ -205,7 +206,7 @@ KisToolTransformConfigWidget::KisToolTransformConfigWidget(TransformTransactionP
     // Init Cage Transform Values
     cageTransformButtonGroup->setId(cageAddEditRadio, 0); // we need to set manually since Qt Designer generates negative by default
     cageTransformButtonGroup->setId(cageDeformRadio, 1);
-    connect(cageTransformButtonGroup, SIGNAL(buttonClicked(int)), this, SLOT(slotCageOptionsChanged(int)));
+    connect(cageTransformButtonGroup, SIGNAL(idClicked(int)), this, SLOT(slotCageOptionsChanged(int)));
 
     // Init Liquify Transform Values
     liquifySizeSlider->setRange(KisLiquifyProperties::minSize(),
@@ -288,7 +289,7 @@ KisToolTransformConfigWidget::KisToolTransformConfigWidget(TransformTransactionP
     // delivery is definite.
     connect(cmbFilter, SIGNAL(activated(KoID)), this, SLOT(notifyEditingFinished()));
     connect(cmbWarpType, SIGNAL(currentIndexChanged(int)), this, SLOT(notifyEditingFinished()));
-    connect(m_rotationCenterButtons, SIGNAL(buttonPressed(int)), this, SLOT(notifyEditingFinished()));
+    connect(m_rotationCenterButtons, SIGNAL(idPressed(int)), this, SLOT(notifyEditingFinished()));
     connect(aspectButton, SIGNAL(keepAspectRatioChanged(bool)), this, SLOT(notifyEditingFinished()));
 
     connect(lockUnlockPointsButton, SIGNAL(clicked()), this, SLOT(notifyEditingFinished()));

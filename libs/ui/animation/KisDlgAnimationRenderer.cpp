@@ -102,9 +102,7 @@ KisDlgAnimationRenderer::KisDlgAnimationRenderer(KisDocument *doc, QWidget *pare
 
     m_page->ffmpegLocation->setMode(KoFileDialog::OpenFile);
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
     m_page->cmbRenderType->setPlaceholderText(i18nc("Not applicable. No render types without valid ffmpeg path.", "N/A"));
-#endif
 
     {   // Establish connections...
         connect(m_page->bnExportOptions, SIGNAL(clicked()), this, SLOT(sequenceMimeTypeOptionsClicked()));
@@ -157,12 +155,12 @@ void KisDlgAnimationRenderer::initializeRenderSettings(const KisDocument &doc, c
     // Check known ffmpeg locations..
     QString likelyFFmpegPath = [&]() {
         // Check last used
-        if (!lastUsedOptions.ffmpegPath.isEmpty()) {
+        if (!lastUsedOptions.ffmpegPath.isEmpty() && QFileInfo(lastUsedOptions.ffmpegPath).isExecutable()) {
             return lastUsedOptions.ffmpegPath;
         }
 
         // Check krita config
-        if (!cfgFFmpegPath.isEmpty()) {
+        if (!cfgFFmpegPath.isEmpty() && QFileInfo(cfgFFmpegPath).isExecutable()) {
             return cfgFFmpegPath;
         }
 

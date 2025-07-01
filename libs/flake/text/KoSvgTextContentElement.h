@@ -34,8 +34,6 @@ public:
         , textPathInfo(rhs.textPathInfo)
         , textLength(rhs.textLength)
         , lengthAdjust(rhs.lengthAdjust)
-        , textDecorationOffsets(rhs.textDecorationOffsets)
-        , textDecorationWidths(rhs.textDecorationWidths)
         , textDecorations(rhs.textDecorations)
         , text(rhs.text)
         , associatedOutline(rhs.associatedOutline)
@@ -64,10 +62,6 @@ public:
     /// the value 'lengthAdjust' attribute of the associated dom element
     KoSvgText::LengthAdjust lengthAdjust = KoSvgText::LengthAdjustSpacing;
 
-    /// Offset metrics for the current dom element.
-    QMap<KoSvgText::TextDecoration, qreal> textDecorationOffsets;
-    /// Underline width metrics for the current dom element.
-    QMap<KoSvgText::TextDecoration, qreal> textDecorationWidths;
     /// Cached text decorations to be used by the painting function.
     QMap<KoSvgText::TextDecoration, QPainterPath> textDecorations;
 
@@ -99,13 +93,13 @@ public:
      * @param withControls this will enable the bidi controls to be
      * counted as well.
      */
-    int numChars(bool withControls = false) const;
+    int numChars(bool withControls = false, KoSvgTextProperties resolvedProps = KoSvgTextProperties()) const;
 
     /**
      * Get the text with transformations applied.
      * @param positions the text positions which may have changed due the uppercase transform.
      */
-    QString getTransformedString(QVector<QPair<int, int>> &positions) const;
+    QString getTransformedString(QVector<QPair<int, int>> &positions, KoSvgTextProperties resolvedProps = KoSvgTextProperties()) const;
 
     /**
      * @brief insertText

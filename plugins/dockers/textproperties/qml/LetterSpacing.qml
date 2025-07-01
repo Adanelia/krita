@@ -7,32 +7,36 @@ import QtQuick 2.0
 import QtQuick.Controls 2.0
 import QtQuick.Layouts 1.12
 import org.krita.flake.text 1.0
+import org.krita.components 1.0
 
 TextPropertyBase {
-    propertyName: i18nc("@label:spinbox", "Letter Spacing");
-    propertyType: TextPropertyBase.Character;
+    propertyTitle: i18nc("@label:spinbox", "Letter Spacing");
+    propertyName: "letter-spacing";
+    propertyType: TextPropertyConfigModel.Character;
     toolTip: i18nc("@info:tooltip",
                    "Letter spacing controls the spacing between visible clusters of characters.");
     searchTerms: i18nc("comma separated search terms for the letter-spacing property, matching is case-insensitive",
                        "letter-spacing, tracking, kerning");
-    property alias letterSpacing: letterSpacingSpn.value;
-    property alias letterSpacingUnit: letterSpacingUnitCmb.comboBoxUnit;
+    property alias letterSpacing: letterSpacingUnitCmb.dataValue;
+    property alias letterSpacingUnit: letterSpacingUnitCmb.dataUnit;
 
     onPropertiesUpdated: {
         blockSignals = true;
-        letterSpacing = properties.letterSpacing.value * letterSpacingSpn.multiplier;
-        letterSpacingUnit = properties.letterSpacing.unitType;
-        visible = properties.letterSpacingState !== KoSvgTextPropertiesModel.PropertyUnset;
+        letterSpacingUnitCmb.dpi = canvasDPI;
+        letterSpacingUnitCmb.setTextProperties(properties);
+        letterSpacingUnitCmb.setDataValueAndUnit(properties.letterSpacing.value, properties.letterSpacing.unitType);
+
+        propertyState = [properties.letterSpacingState];
+        setVisibleFromProperty();
         blockSignals = false;
     }
     onLetterSpacingChanged: {
         if (!blockSignals) {
-            properties.letterSpacing.value = letterSpacing / letterSpacingSpn.multiplier;
+            properties.letterSpacing.value = letterSpacing;
         }
     }
 
     onLetterSpacingUnitChanged: {
-        letterSpacingUnitCmb.currentIndex = letterSpacingUnitCmb.indexOfValue(letterSpacingUnit);
         if (!blockSignals) {
             properties.letterSpacing.unitType = letterSpacingUnit;
         }
@@ -50,7 +54,7 @@ TextPropertyBase {
         }
 
             Label {
-                text: propertyName;
+                text: propertyTitle;
                 elide: Text.ElideRight;
                 Layout.fillWidth: true;
                 font.italic: properties.letterSpacingState === KoSvgTextPropertiesModel.PropertyTriState;
@@ -62,13 +66,17 @@ TextPropertyBase {
                 Layout.fillWidth: true;
                 from: -999 * multiplier;
                 to: 999 * multiplier;
+                onValueChanged: letterSpacingUnitCmb.userValue = value;
             }
 
             UnitComboBox {
                 id: letterSpacingUnitCmb
                 spinBoxControl: letterSpacingSpn;
                 isFontSize: false;
-                Layout.fillWidth: true;
+                dpi:dpi;
+                onUserValueChanged: letterSpacingSpn.value = userValue;
+                Layout.preferredWidth: minimumUnitBoxWidth;
+                Layout.maximumWidth: implicitWidth;
                 allowPercentage: false; // CSS-Text-4 has percentages for letter-spacing, but so does SVG 1.1, and they both are implemented differently.
             }
     }

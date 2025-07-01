@@ -33,13 +33,6 @@ public:
 
     static const QString &defaultPlaceholderText();
 
-    enum TextRendering {
-        Auto,
-        OptimizeSpeed,
-        OptimizeLegibility,
-        GeometricPrecision
-    };
-
     KoShape* cloneShape() const override;
 
     void paint(QPainter &painter) const override;
@@ -64,29 +57,6 @@ public:
     void relayout() const;
 
     QList<KoShape *> textOutline() const;
-
-    /**
-     * @brief setTextRenderingFromString
-     * Set the quality of the text rendering.
-     *
-     * Based on: https://www.w3.org/TR/SVG11/painting.html#TextRenderingProperty
-     *
-     * "auto" is the default.
-     * "optimizeSpeed" will turn off anti-aliasing.
-     * "optimizeLegibility" will have us load the hinting metrics.
-     * "geometricPrecision" will not load the hinting metrics.
-     *
-     * @param textRendering the textRendering to use.
-     */
-    void setTextRenderingFromString(const QString &textRendering);
-
-    /**
-     * @brief textRenderingString
-     * @see setTextRenderingFromString
-     * @return the Text Rendering type as a string.
-     */
-
-    QString textRenderingString() const;
 
     /**
      * @brief setShapesInside
@@ -434,6 +404,37 @@ public:
 
     /// Outputs debug with the current textData tree.
     void debugParsing();
+
+    /***
+     * This blocks the shape from automatically calling relayout
+     * when the text or properties change. Relayout needs to be called
+     * in this mode.
+     * Used in the SVGTextLabel.
+     */
+    void setRelayoutBlocked(const bool disable);
+
+    /**
+     * @brief relayoutIsBlocked
+     * @return whether automatic relayout is blocked,
+     * as are updates to shape listeners.
+     */
+    bool relayoutIsBlocked() const;
+
+    /**
+     * @brief setDisableFontMatching
+     * @param disable font matching when retrieving fonts
+     * for text layout (if possible).
+     * This speeds up text layout, but should only be done
+     * if there's only one font necessary and it can be
+     * found with the KoFFWWSconverter.
+     */
+    void setFontMatchingDisabled(const bool disable);
+
+    /**
+     * @brief fontMatchingDisabled
+     * @return whether font matching is disabled for this shape.
+     */
+    bool fontMatchingDisabled() const;
 
 protected:
 

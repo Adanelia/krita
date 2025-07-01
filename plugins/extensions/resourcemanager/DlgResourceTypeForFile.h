@@ -9,7 +9,6 @@
 #include <KoDialog.h>
 #include <QModelIndex>
 #include <QPersistentModelIndex>
-#include <QStyledItemDelegate>
 #include <QWidget>
 #include <QMap>
 #include <QString>
@@ -27,8 +26,6 @@ class DlgResourceTypeForFile : public KoDialog
 public:
 
     DlgResourceTypeForFile(QWidget* parent, QMap<QString, QStringList> resourceTypesForMimetype);
-
-    explicit DlgResourceTypeForFile(QWidget *parent = 0);
 
     QString getResourceTypeForMimetype(QString mimetype);
 

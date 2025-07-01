@@ -6,13 +6,23 @@ from .components import (
     colormodelcombobox,
     colorprofilecombobox,
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (QFormLayout, QListWidget,
-                             QAbstractItemView, QDialogButtonBox,
-                             QVBoxLayout, QFrame, QMessageBox, QPushButton,
-                             QAbstractScrollArea)
-from PyQt5.QtGui import QIcon
-import krita
+try:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import (QFormLayout, QListWidget,
+                                QAbstractItemView, QDialogButtonBox,
+                                QVBoxLayout, QFrame, QMessageBox, QPushButton,
+                                QAbstractScrollArea)
+except:
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtWidgets import (QFormLayout, QListWidget,
+                                QAbstractItemView, QDialogButtonBox,
+                                QVBoxLayout, QFrame, QMessageBox, QPushButton,
+                                QAbstractScrollArea)
+from krita import Krita
+from builtins import i18n
+from scripter import utils
+
+from . import resources_rc # Loads the icon qrc
 
 
 class UIColorSpace(object):
@@ -22,7 +32,8 @@ class UIColorSpace(object):
         self.mainLayout = QVBoxLayout(self.mainDialog)
         self.formLayout = QFormLayout()
         self.documentLayout = QVBoxLayout()
-        self.refreshButton = QPushButton(QIcon(':/icons/refresh.svg'),
+        utils.setNeedDarkIcon(self.mainDialog.palette().window().color())
+        self.refreshButton = QPushButton(utils.getThemedIcon(':/icons/refresh.svg'),
                                          i18n("Refresh"))
         self.widgetDocuments = QListWidget()
         self.colorModelComboBox = colormodelcombobox.ColorModelComboBox(self)
@@ -30,9 +41,9 @@ class UIColorSpace(object):
         self.colorProfileComboBox = \
             colorprofilecombobox.ColorProfileComboBox(self)
         self.buttonBox = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
 
-        self.kritaInstance = krita.Krita.instance()
+        self.kritaInstance = Krita.instance()
         self.documentsList = []
         self.colorModelsList = []
         self.colorDepthsList = []
@@ -42,10 +53,10 @@ class UIColorSpace(object):
         self.buttonBox.accepted.connect(self.confirmButton)
         self.buttonBox.rejected.connect(self.mainDialog.close)
 
-        self.mainDialog.setWindowModality(Qt.NonModal)
-        self.widgetDocuments.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.mainDialog.setWindowModality(Qt.WindowModality.NonModal)
+        self.widgetDocuments.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.widgetDocuments.setSizeAdjustPolicy(
-            QAbstractScrollArea.AdjustToContents)
+            QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
 
     def initialize(self):
         self.loadDocuments()
@@ -63,8 +74,8 @@ class UIColorSpace(object):
                                self.colorProfileComboBox)
 
         self.line = QFrame()
-        self.line.setFrameShape(QFrame.HLine)
-        self.line.setFrameShadow(QFrame.Sunken)
+        self.line.setFrameShape(QFrame.Shape.HLine)
+        self.line.setFrameShadow(QFrame.Shadow.Sunken)
 
         self.mainLayout.addLayout(self.formLayout)
         self.mainLayout.addWidget(self.line)
@@ -129,7 +140,7 @@ class UIColorSpace(object):
                 i18n("The selected documents have been converted."))
         else:
             self.msgBox.setText(i18n("Select at least one document."))
-        self.msgBox.exec_()
+        self.msgBox.exec()
 
     def convertColorSpace(self, documents):
         for document in documents:

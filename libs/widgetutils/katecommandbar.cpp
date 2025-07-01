@@ -11,8 +11,6 @@
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QPainter>
-#include <QPointer>
-#include <QPushButton>
 #include <QSortFilterProxyModel>
 #include <QStyledItemDelegate>
 #include <QTextDocument>
@@ -181,11 +179,7 @@ public:
             // collect rects for each word
             QVector<QPair<QRect, QString>> btns;
             const auto list = [&shortcutString] {
-#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
-                auto list = shortcutString.split(QLatin1Char('+'), QString::SkipEmptyParts);
-#else
                 auto list = shortcutString.split(QLatin1Char('+'), Qt::SkipEmptyParts);
-#endif
                 if (shortcutString.endsWith(QLatin1String("+"))) {
                     list.append(QStringLiteral("+"));
                 }
@@ -391,7 +385,7 @@ void KateCommandBar::slotReturnPressed()
                 menuActions = menu->actions();
             }
 
-            for (auto menuAction : qAsConst(menuActions)) {
+            for (auto menuAction : std::as_const(menuActions)) {
                 if (menuAction) {
                     list.append({KLocalizedString::removeAcceleratorMarker(act->text()), menuAction});
                 }

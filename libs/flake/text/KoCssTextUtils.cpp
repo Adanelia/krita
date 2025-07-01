@@ -6,6 +6,7 @@
 #include "KoCssTextUtils.h"
 #include "graphemebreak.h"
 #include <QChar>
+#include <kis_assert.h>
 
 QVector<QPair<int, int>> positionDifference(QStringList a, QStringList b) {
     QVector<QPair<int, int>> positions;
@@ -19,12 +20,12 @@ QVector<QPair<int, int>> positionDifference(QStringList a, QStringList b) {
         if (textA.size() > textB.size()) {
             for (int j=0; j < textA.size(); j++) {
                 int k = j < textB.size()? countB+j: -1;
-                positions.append(QPair(countA+j, k));
+                positions.append(qMakePair(countA+j, k));
             }
         } else {
             for (int j=0; j < textB.size(); j++) {
                 int k = j < textA.size()? countA+j: -1;
-                positions.append(QPair(k, countB+j));
+                positions.append(qMakePair(k, countB+j));
             }
         }
         countA += textA.size();
@@ -119,66 +120,66 @@ static QChar findSmallKanaToBigKana(const QChar &value, const QChar &defaultValu
     static QMap<QChar, QChar> map = {
         // NOTE: these are not fully sequential!
         // clang-format off
-        {{0x3041}, {0x3042}},
-        {{0x3043}, {0x3044}},
-        {{0x3045}, {0x3046}},
-        {{0x3047}, {0x3048}},
-        {{0x3049}, {0x304A}},
-        {{0x3095}, {0x304B}},
-        {{0x3096}, {0x3051}},
-        {{0x1B132}, {0x3053}},
-        {{0x3063}, {0x3064}},
-        {{0x3083}, {0x3084}},
-        {{0x3085}, {0x3086}},
-        {{0x3087}, {0x3088}},
-        {{0x308E}, {0x308F}},
-        {{0x1B150}, {0x3090}},
-        {{0x1B151}, {0x3091}},
-        {{0x1B152}, {0x3092}},
+        {QChar{0x3041}, QChar{0x3042}},
+        {QChar{0x3043}, QChar{0x3044}},
+        {QChar{0x3045}, QChar{0x3046}},
+        {QChar{0x3047}, QChar{0x3048}},
+        {QChar{0x3049}, QChar{0x304A}},
+        {QChar{0x3095}, QChar{0x304B}},
+        {QChar{0x3096}, QChar{0x3051}},
+        {QChar{0x1B132}, QChar{0x3053}},
+        {QChar{0x3063}, QChar{0x3064}},
+        {QChar{0x3083}, QChar{0x3084}},
+        {QChar{0x3085}, QChar{0x3086}},
+        {QChar{0x3087}, QChar{0x3088}},
+        {QChar{0x308E}, QChar{0x308F}},
+        {QChar{0x1B150}, QChar{0x3090}},
+        {QChar{0x1B151}, QChar{0x3091}},
+        {QChar{0x1B152}, QChar{0x3092}},
 
-        {{0x30A1}, {0x30A2}},
-        {{0x30A3}, {0x30A4}},
-        {{0x30A5}, {0x30A6}},
-        {{0x30A7}, {0x30A8}},
-        {{0x30A9}, {0x30AA}},
-        {{0x30F5}, {0x30AB}},
-        {{0x31F0}, {0x30AF}},
-        {{0x30F6}, {0x30B1}},
-        {{0x1B155}, {0x30B3}},
-        {{0x31F1}, {0x30B7}},
-        {{0x31F2}, {0x30B9}},
-        {{0x30C3}, {0x30C4}},
-        {{0x31F3}, {0x30C8}},
-        {{0x31F4}, {0x30CC}},
-        {{0x31F5}, {0x30CF}},
-        {{0x31F6}, {0x30D2}},
-        {{0x31F7}, {0x30D5}},
-        {{0x31F8}, {0x30D8}},
-        {{0x31F9}, {0x30DB}},
-        {{0x31FA}, {0x30E0}},
-        {{0x30E3}, {0x30E4}},
-        {{0x30E5}, {0x30E6}},
-        {{0x30E7}, {0x30E8}},
-        {{0x31FB}, {0x30E9}},
-        {{0x31FC}, {0x30EA}},
-        {{0x31FD}, {0x30EB}},
-        {{0x31FE}, {0x30EC}},
-        {{0x31FF}, {0x30ED}},
-        {{0x30EE}, {0x30EF}},
-        {{0x1B164}, {0x30F0}},
-        {{0x1B165}, {0x30F1}},
-        {{0x1B166}, {0x30F2}},
-        {{0x1B167}, {0x30F3}},
+        {QChar{0x30A1}, QChar{0x30A2}},
+        {QChar{0x30A3}, QChar{0x30A4}},
+        {QChar{0x30A5}, QChar{0x30A6}},
+        {QChar{0x30A7}, QChar{0x30A8}},
+        {QChar{0x30A9}, QChar{0x30AA}},
+        {QChar{0x30F5}, QChar{0x30AB}},
+        {QChar{0x31F0}, QChar{0x30AF}},
+        {QChar{0x30F6}, QChar{0x30B1}},
+        {QChar{0x1B155}, QChar{0x30B3}},
+        {QChar{0x31F1}, QChar{0x30B7}},
+        {QChar{0x31F2}, QChar{0x30B9}},
+        {QChar{0x30C3}, QChar{0x30C4}},
+        {QChar{0x31F3}, QChar{0x30C8}},
+        {QChar{0x31F4}, QChar{0x30CC}},
+        {QChar{0x31F5}, QChar{0x30CF}},
+        {QChar{0x31F6}, QChar{0x30D2}},
+        {QChar{0x31F7}, QChar{0x30D5}},
+        {QChar{0x31F8}, QChar{0x30D8}},
+        {QChar{0x31F9}, QChar{0x30DB}},
+        {QChar{0x31FA}, QChar{0x30E0}},
+        {QChar{0x30E3}, QChar{0x30E4}},
+        {QChar{0x30E5}, QChar{0x30E6}},
+        {QChar{0x30E7}, QChar{0x30E8}},
+        {QChar{0x31FB}, QChar{0x30E9}},
+        {QChar{0x31FC}, QChar{0x30EA}},
+        {QChar{0x31FD}, QChar{0x30EB}},
+        {QChar{0x31FE}, QChar{0x30EC}},
+        {QChar{0x31FF}, QChar{0x30ED}},
+        {QChar{0x30EE}, QChar{0x30EF}},
+        {QChar{0x1B164}, QChar{0x30F0}},
+        {QChar{0x1B165}, QChar{0x30F1}},
+        {QChar{0x1B166}, QChar{0x30F2}},
+        {QChar{0x1B167}, QChar{0x30F3}},
 
-        {{0xFF67}, {0xFF71}},
-        {{0xFF68}, {0xFF72}},
-        {{0xFF69}, {0xFF73}},
-        {{0xFF6A}, {0xFF74}},
-        {{0xFF6B}, {0xFF75}},
-        {{0xFF6F}, {0xFF82}},
-        {{0xFF6C}, {0xFF94}},
-        {{0xFF6D}, {0xFF95}},
-        {{0xFF6E}, {0xFF96}},
+        {QChar{0xFF67}, QChar{0xFF71}},
+        {QChar{0xFF68}, QChar{0xFF72}},
+        {QChar{0xFF69}, QChar{0xFF73}},
+        {QChar{0xFF6A}, QChar{0xFF74}},
+        {QChar{0xFF6B}, QChar{0xFF75}},
+        {QChar{0xFF6F}, QChar{0xFF82}},
+        {QChar{0xFF6C}, QChar{0xFF94}},
+        {QChar{0xFF6D}, QChar{0xFF95}},
+        {QChar{0xFF6E}, QChar{0xFF96}},
         // clang-format on
     };
 
@@ -195,15 +196,22 @@ QString KoCssTextUtils::transformTextFullSizeKana(const QString &text)
     return transformedText;
 }
 
-QVector<bool> KoCssTextUtils::collapseSpaces(QString *text, KoSvgText::TextSpaceCollapse collapseMethod)
+QVector<bool> KoCssTextUtils::collapseSpaces(QString *text, QMap<int, KoSvgText::TextSpaceCollapse> collapseMethods)
 {
+
     QString modifiedText = *text;
     QVector<bool> collapseList(modifiedText.size());
     collapseList.fill(false);
     int spaceSequenceCount = 0;
+    KoSvgText::TextSpaceCollapse collapseMethod = collapseMethods.first();
     for (int i = 0; i < modifiedText.size(); i++) {
         bool firstOrLast = (i == 0 || i == modifiedText.size() - 1);
         bool collapse = false;
+        if (collapseMethods.contains(i)) {
+            // If a whitespace:collapse sequence is inside a pre-wrap sequence, the first space needs to be left alone.
+            if (collapseMethods.value(i) != collapseMethod) spaceSequenceCount = 0;
+            collapseMethod = collapseMethods.value(i);
+        }
         const QChar c = modifiedText.at(i);
         if (c == QChar::LineFeed || c == QChar::Tabulation) {
             if (collapseMethod == KoSvgText::Collapse ||
@@ -225,6 +233,7 @@ QVector<bool> KoCssTextUtils::collapseSpaces(QString *text, KoSvgText::TextSpace
                     collapse = true;
                     break;
                 case KoSvgText::Preserve:
+                case KoSvgText::BreakSpaces:
                 case KoSvgText::PreserveSpaces:
                     collapse = false;
                     break;
@@ -243,6 +252,11 @@ QVector<bool> KoCssTextUtils::collapseSpaces(QString *text, KoSvgText::TextSpace
     }
     // go backward to ensure any dangling space characters are marked as collapsed.
     for (int i = modifiedText.size()-1; i>=0; i--) {
+        if (collapseMethods.contains(i)) {
+            int pos = collapseMethods.keys().indexOf(i);
+            collapseMethod = collapseMethods.value(collapseMethods.keys().value(pos-1, 0), KoSvgText::Collapse);
+            if (collapseMethod != KoSvgText::Collapse) break;
+        }
         if (modifiedText.at(i).isSpace()) {
             if (collapseMethod == KoSvgText::Collapse) {
                 collapseList[i] = true;
@@ -267,6 +281,7 @@ bool KoCssTextUtils::collapseLastSpace(const QChar c, KoSvgText::TextSpaceCollap
             collapse = true;
             break;
         case KoSvgText::Preserve:
+        case KoSvgText::BreakSpaces:
             collapse = false;
             break;
         case KoSvgText::PreserveBreaks:
@@ -433,7 +448,7 @@ const QString BIDI_CONTROL_PDI = "\u2069";
 const QString UNICODE_BIDI_ISOLATE_OVERRIDE_LR_START = "\u2068\u202d";
 const QString UNICODE_BIDI_ISOLATE_OVERRIDE_RL_START = "\u2068\u202e";
 const QString UNICODE_BIDI_ISOLATE_OVERRIDE_END = "\u202c\u2069";
-const QChar ZERO_WIDTH_JOINER = 0x200d;
+const QChar ZERO_WIDTH_JOINER = QChar{0x200d};
 
 QString KoCssTextUtils::getBidiOpening(bool ltr, KoSvgText::UnicodeBidi bidi)
 {
@@ -572,4 +587,44 @@ void KoCssTextUtils::removeText(QString &text, int &start, int length)
         regionalIndicatorCount = regionalIndicator(i)? regionalIndicatorCount + v: 0;
     }
     text.remove(start, end-start);
+}
+
+qreal KoCssTextUtils::cssSelectFontStyleValue(const QVector<qreal> &values, const qreal targetValue, const qreal defaultValue, const qreal defaultValueUpper, const bool shouldNotReturnDefault)
+{
+    if(values.isEmpty()) {
+        return targetValue;
+    }
+    // follow the CSS Fonts selection mechanism.
+    // See https://drafts.csswg.org/css-fonts-4/#font-style-matching
+    QVector<qreal> sortedValues = values;
+    std::sort(sortedValues.begin(), sortedValues.end());
+    qreal selectedValue = defaultValue;
+    auto upper = std::lower_bound(sortedValues.begin(), sortedValues.end(), targetValue);
+    if (upper == sortedValues.end()) {
+        upper--;
+    }
+    auto lower = upper;
+    if (lower != sortedValues.begin() && *lower > targetValue) {
+        lower--;
+    }
+
+    // ... Which wants to select the lower possible selection when the value is below the default.
+    if (targetValue < defaultValue) {
+        selectedValue = *lower;
+    // ... the higher closest value when the value is higher than the default (upper bound)
+    } else if (targetValue > defaultValueUpper) {
+        selectedValue = *upper;
+    } else {
+        // ... and if the value is between the lower and upper default bounds, first higher (within bounds)
+        // then lower, then higher.
+        if (*upper <= defaultValueUpper && *lower != targetValue) {
+            selectedValue = *upper;
+        } else {
+            selectedValue = *lower;
+        }
+    }
+    if (qFuzzyCompare(selectedValue, defaultValue) && shouldNotReturnDefault) {
+        return targetValue;
+    }
+    return selectedValue;
 }

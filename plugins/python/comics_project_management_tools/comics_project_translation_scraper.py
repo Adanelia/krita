@@ -16,13 +16,13 @@ This class does several things:
 4) Writing to a csv file was considered until the realisation hit that comic dialog itself contains commas.
 """
 
-import sys
 import os
-import csv
 import zipfile
-import types
 from xml.dom import minidom
-from PyQt5.QtCore import QDateTime, Qt
+try:
+    from PyQt6.QtCore import QDateTime, Qt
+except:
+    from PyQt5.QtCore import QDateTime, Qt
 
 
 class translation_scraper():
@@ -204,7 +204,7 @@ class translation_scraper():
 
         file.write("msgid " + quote + quote + newLine)
         file.write("msgstr " + quote + quote + newLine)
-        date = QDateTime.currentDateTimeUtc().toString(Qt.ISODate)
+        date = QDateTime.currentDateTimeUtc().toString(Qt.DateFormat.ISODate)
         file.write(quote + "POT-Creation-Date:" + date + "\\n" + quote + newLine)
         file.write(quote + "Content-Type: text/plain; charset=UTF-8\\n" + quote + newLine)
         file.write(quote + "Content-Transfer-Encoding: 8bit\\n" + quote + newLine)

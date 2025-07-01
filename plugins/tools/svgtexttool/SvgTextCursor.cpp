@@ -37,6 +37,8 @@
 #include <kis_assert.h>
 #include <QInputMethodEvent>
 #include <QBuffer>
+#include <QWidget>
+
 
 struct IMEDecorationInfo {
     int start = -1; ///< The startPos from the attribute.
@@ -325,12 +327,12 @@ void SvgTextCursor::removeLastCodePoint()
     }
 }
 
-KoSvgTextProperties SvgTextCursor::currentTextProperties() const
+QPair<KoSvgTextProperties, KoSvgTextProperties> SvgTextCursor::currentTextProperties() const
 {
     if (d->shape) {
-        return d->shape->propertiesForPos(d->pos);
+        return QPair<KoSvgTextProperties, KoSvgTextProperties>(d->shape->propertiesForPos(d->pos), d->shape->propertiesForPos(d->pos, true));
     }
-    return KoSvgTextProperties();
+    return QPair<KoSvgTextProperties, KoSvgTextProperties>();
 }
 
 QList<KoSvgTextProperties> SvgTextCursor::propertiesForRange() const
@@ -896,9 +898,17 @@ void SvgTextCursor::toggleProperty(KoSvgTextProperties::PropertyId property)
                 newVal = value == 400? QVariant(700): QVariant(400);
                 if (value == 400) break;
             } else if (property == KoSvgTextProperties::FontStyleId) {
-                QFont::Style value = QFont::Style(it->property(property, QVariant(QFont::StyleNormal)).toInt());
-                newVal = value == QFont::StyleNormal? QVariant(QFont::StyleItalic): QVariant(QFont::StyleNormal);
-                if (value == QFont::StyleNormal) break;
+                KoSvgText::CssFontStyleData value = it->property(property, QVariant(QFont::StyleNormal)).value<KoSvgText::CssFontStyleData>();
+                KoSvgText::CssFontStyleData newSlant = value;
+                if (value.style == QFont::StyleNormal) {
+                    newSlant.style = QFont::StyleItalic;
+                } else {
+                    newSlant.style = QFont::StyleNormal;
+                    newSlant.slantValue.customValue = 0;
+                    newSlant.slantValue.isAuto = true;
+                }
+                newVal = QVariant::fromValue(newSlant);
+                if (value.style == QFont::StyleNormal) break;
             } else if (property == KoSvgTextProperties::TextDecorationLineId) {
                 KoSvgText::TextDecorations decor = it->propertyOrDefault(KoSvgTextProperties::TextDecorationLineId).value<KoSvgText::TextDecorations>();
                 KoSvgText::TextDecorations newDecor;
@@ -1214,6 +1224,7 @@ void SvgTextCursor::updateCursor(bool firstUpdate)
         d->oldCursorRect = d->shape->shapeToDocument(d->cursorShape.boundingRect());
         d->posIndex = d->shape->indexForPos(d->pos);
         d->anchorIndex = d->shape->indexForPos(d->anchor);
+        emit selectionChanged();
     }
     d->cursorColor = QColor();
     d->cursorShape = d->shape? d->shape->cursorForPos(d->pos, d->cursorCaret, d->cursorColor): QPainterPath();

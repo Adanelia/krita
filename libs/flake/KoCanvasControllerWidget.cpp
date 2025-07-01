@@ -26,9 +26,7 @@
 #include <QPainter>
 #include <QScrollBar>
 #include <QEvent>
-#include <QDockWidget>
 #include <QTimer>
-#include <QPointer>
 
 #include <QOpenGLWidget>
 
@@ -41,7 +39,9 @@ void KoCanvasControllerWidget::Private::setDocumentOffset()
     // the canvas must add to the update rect in its paint event, to
     // compensate.
 
-    QPoint pt(q->horizontalScrollBar()->value(), q->verticalScrollBar()->value());
+    const QPoint pt(q->horizontalScrollBar()->value(), q->verticalScrollBar()->value());
+    if (q->documentOffset() == pt) return;
+
     q->proxyObject->emitMoveDocumentOffset(pt);
 
     QWidget *canvasWidget = canvas->canvasWidget();

@@ -9,10 +9,7 @@
 
 #include <QDialog>
 #include <QPointer>
-#include <QPair>
 #include <QScopedPointer>
-#include <QHash>
-#include <QSet>
 
 #include <KoColorSet.h>
 
@@ -39,13 +36,12 @@ class KRITAUI_EXPORT KisDlgPaletteEditor : public QDialog
 {
     Q_OBJECT
 public:
-    explicit KisDlgPaletteEditor();
+    explicit KisDlgPaletteEditor(KisPaletteEditor *editor, QWidget *parent = nullptr, Qt::WindowFlags f = Qt::WindowFlags());
     ~KisDlgPaletteEditor();
 
 public:
-    void setPaletteModel(KisPaletteModel *);
+    void initialize(KisPaletteModel *);
     KoColorSetSP palette() const { return m_colorSet; }
-    void setView(KisViewManager *);
 
 private Q_SLOTS:
     void slotDelGroup();
@@ -60,8 +56,6 @@ private Q_SLOTS:
     void slotNameChanged();
     void slotColCountChanged(int);
 
-    void slotAccepted();
-
 private:
     QString oldNameFromNewName(const QString &newName) const;
 
@@ -70,7 +64,7 @@ private:
     QScopedPointer<QAction> m_actAddGroup;
     QScopedPointer<QAction> m_actDelGroup;
     QScopedPointer<QAction> m_actRenGroup;
-    QScopedPointer<KisPaletteEditor> m_paletteEditor;
+    QPointer<KisPaletteEditor> m_paletteEditor;
     QSharedPointer<KoColorSet> m_colorSet;
     QString m_currentGroupOriginalName;
 

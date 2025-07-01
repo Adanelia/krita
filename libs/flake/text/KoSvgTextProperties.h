@@ -17,6 +17,8 @@
 
 #include <boost/operators.hpp>
 
+#include "KoCSSFontInfo.h"
+
 class SvgLoadingContext;
 class KoShapeBackground;
 
@@ -59,28 +61,18 @@ public:
         WordSpacingId, ///< KoSvgText::AutoLengthPercentage
 
         FontFamiliesId, ///< QStringList
-        FontStyleId, ///< QFont::Style
+        FontStyleId, ///< KoSvgText::CssSlantData
         FontStretchId, ///< Int
         FontWeightId, ///< Int
         FontSizeId, ///< Double
         FontSizeAdjustId, ///< KoSvgText::AutoValue
 
         /// KoSvgText::FontVariantFeature
-        FontVariantCommonLigId,
-        FontVariantDiscretionaryLigId,
-        FontVariantHistoricalLigId,
-        FontVariantContextualAltId,
+        FontVariantLigatureId,
         FontVariantPositionId,
         FontVariantCapsId,
-        FontVariantNumFigureId,
-        FontVariantNumSpacingId,
-        FontVariantNumFractId,
-        FontVariantNumOrdinalId,
-        FontVariantNumSlashedZeroId,
-        FontVariantHistoricalFormsId,
-        FontVariantEastAsianVarId,
-        FontVariantEastAsianWidthId,
-        FontVariantRubyId,
+        FontVariantNumericId,
+        FontVariantEastAsianId,
 
         FontFeatureSettingsId, ///< QStringList
         FontOpticalSizingId, ///< Bool
@@ -89,8 +81,7 @@ public:
         TextDecorationLineId, ///< Flags, KoSvgText::TextDecorations
         TextDecorationStyleId, ///< KoSvgText::TextDecorationStyle
         TextDecorationColorId, ///< QColor
-        TextDecorationPositionHorizontalId, ///< KoSvgText::TextDecorationUnderlinePosition
-        TextDecorationPositionVerticalId, ///< KoSvgText::TextDecorationUnderlinePosition
+        TextDecorationPositionId, ///< KoSvgText::TextDecorationUnderlinePosition
         FillId, ///< KoSvgText::BackgroundProperty
         StrokeId, ///< KoSvgText::StrokeProperty
         Opacity, ///< Double, SVG shape opacity.
@@ -117,6 +108,13 @@ public:
 
         ShapePaddingId, ///< Double
         ShapeMarginId,  ///< Double
+
+        FontSynthesisBoldId, ///< Bool
+        FontSynthesisItalicId, ///< Bool
+        FontSynthesisSmallCapsId, ///< Bool
+        FontSynthesisSuperSubId, ///< Bool
+
+        TextRenderingId, ///< Enum
 
         KraTextVersionId ///< Int, used for handling incorrectly saved files.
     };
@@ -186,7 +184,7 @@ public:
      * @param fontSize -- fontsize to resolve 'em' to.
      * @param xHeight -- xHeight to resolve 'ex' to.
      */
-    void resolveRelativeValues(const qreal fontSize = 12.0, const qreal xHeight = 6.0);
+    void resolveRelativeValues(const KoSvgText::FontMetrics metrics = KoSvgText::FontMetrics(12.0, true), const qreal fontSize = 12.0);
 
     /**
      * Return true if the property \p id is inherited from \p parentProperties.
@@ -241,6 +239,22 @@ public:
     qreal xHeight() const;
 
     /**
+     * @brief metrics
+     * Return the metrics of the first available font.
+     * @param withResolvedLineHeight -- apply the lineheight into the linegap property.
+     * @return metrics for the current font.
+     */
+    KoSvgText::FontMetrics metrics(const bool withResolvedLineHeight = true) const;
+
+    /**
+     * @brief applyLineHeight
+     * Calculate the linegap for the current linegap property.
+     * @param metrics the metrics to apply this to.
+     * @return metrics with the linegap adjusted for the lineheight.
+     */
+    KoSvgText::FontMetrics applyLineHeight(KoSvgText::FontMetrics metrics) const;
+
+    /**
      * @brief fontFeaturesForText
      * Returns a harfbuzz friendly list of opentype font-feature settings using
      * the various font-variant and font-feature-settings values.
@@ -252,13 +266,11 @@ public:
     QStringList fontFeaturesForText(int start, int length) const;
 
     /**
-     * @brief fontAxisSettings
-     * This is used to configure variable fonts. It gets the appropriate values
-     * from font width, stretch, style, size, if font-optical-sizing is not set
-     * to 'none, and finally the font-variation-settings property.
-     * @return a map of axis-tags and their values.
+     * @brief cssFontInfo
+     * @return this collects all the CSS Font properties into
+     * a KoCSSFontInfo struct for usage with the KoFontRegistery.
      */
-    QMap<QString, qreal> fontAxisSettings() const;
+    KoCSSFontInfo cssFontInfo() const;
 
     QSharedPointer<KoShapeBackground> background() const;
     KoShapeStrokeModelSP stroke() const;

@@ -1,6 +1,15 @@
 set(KRITA_TEXTPROPERTIES_SOURCES 
     TextPropertiesPlugin.cpp 
     TextPropertiesDock.cpp 
+    FontStyleModel.cpp
+    FontAxesModel.cpp
+    KoShapeQtQuickLabel.cpp
+    TagFilterProxyModelQmlWrapper.cpp
+    OpenTypeFeatureModel.cpp
+    LocaleHandler.cpp
+    CssQmlUnitConverter.cpp
+    TextPropertyConfigModel.cpp
+    TextPropertyConfigDialog.cpp
 )
 
 qt_add_resources(KRITA_TEXTPROPERTIES_SOURCES textproperties.qrc)

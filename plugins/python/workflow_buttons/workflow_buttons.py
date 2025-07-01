@@ -3,10 +3,16 @@
 #   Timothée Giet <animtim@gmail.com>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from PyQt5.QtCore import QSize
-from PyQt5.QtGui import QIcon, QPixmap
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QToolButton, QPushButton, QToolBar, QAction, QSizePolicy
+try:
+    from PyQt6.QtCore import QSize
+    from PyQt6.QtGui import QIcon, QPixmap, QAction
+    from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QToolButton, QPushButton, QToolBar, QSizePolicy
+except:
+    from PyQt5.QtCore import QSize
+    from PyQt5.QtGui import QIcon, QPixmap
+    from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QToolButton, QPushButton, QToolBar, QAction, QSizePolicy
 from krita import Krita, DockWidget, DockWidgetFactory, DockWidgetFactoryBase, ManagedColor
+from builtins import i18n, i18nc, Application
 from .flow_layout import FlowLayout
 from .buttons_settings_dialog import LISTOFTOOLS, LISTOFSIZES, ButtonsSettingsDialog
 import ast
@@ -50,7 +56,7 @@ class WorkflowButtons(DockWidget):
         self.bottomBar.setIconSize(QSize(22,22))
         self.bottomBar.setStyleSheet("QToolBar{spacing:0px; margin:0px;}")
         barSpacer = QWidget(self.bottomBar)
-        barSpacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        barSpacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.bottomBar.addWidget(barSpacer)
         self.bottomLayout.addWidget(self.bottomBar)
 
@@ -129,7 +135,7 @@ class WorkflowButtons(DockWidget):
 
     def openSettingsDialog(self):
         newDialog = ButtonsSettingsDialog(self, self.buttonsContentList, self.sizeIndex, self.settingsButtonPosition)
-        newDialog.exec_()
+        newDialog.exec()
         if newDialog.result() == 1:
             self.buttonsContentList = newDialog.buttonsContentList
             self.sizeIndex = newDialog.sizeIndex
@@ -158,7 +164,7 @@ class CustomButton(QToolButton):
         # select given tool
         if self.values["toolIndex"] != "":
             toolIndex = int(self.values["toolIndex"])
-            if(toolIndex > 0 and toolIndex < len(LISTOFTOOLS) - 1):
+            if(toolIndex > 0 and toolIndex < len(LISTOFTOOLS)):
                 INSTANCE.action(LISTOFTOOLS[int(self.values["toolIndex"])]["toolName"]).trigger()
 
         # get list of all presets
@@ -194,7 +200,7 @@ class CustomButton(QToolButton):
 
 
 dock_widget_factory = DockWidgetFactory(DOCKER_ID,
-                                        DockWidgetFactoryBase.DockRight,
+                                        DockWidgetFactoryBase.DockPosition.DockRight,
                                         WorkflowButtons)
 
 INSTANCE.addDockWidgetFactory(dock_widget_factory)

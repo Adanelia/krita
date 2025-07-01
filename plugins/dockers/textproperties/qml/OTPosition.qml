@@ -6,27 +6,50 @@
 import QtQuick 2.0
 import QtQuick.Controls 2.0
 import QtQuick.Layouts 1.12
+import org.krita.flake.text 1.0
 
 TextPropertyBase {
+    propertyTitle: i18nc("@label", "Glyphs: Position");
+    propertyName: "ot-position";
+    propertyType: TextPropertyConfigModel.Character;
+    toolTip: i18nc("@info:tooltip",
+                   "Enable super or subscripts on the text.");
+    searchTerms: i18nc("comma separated search terms for the font-variant-position property, matching is case-insensitive",
+                       "font-variant-position, superscript, subscript");
+
+    property int positionType;
+
+
+    onPropertiesUpdated: {
+        blockSignals = true;
+        positionType = properties.fontVariantPosition;
+
+        propertyState = [properties.fontVariantPositionState];
+        setVisibleFromProperty();
+        blockSignals = false;
+    }
+
+    onPositionTypeChanged: {
+        positionCmb.currentIndex = positionCmb.indexOfValue(positionType)
+        if (!blockSignals) {
+            properties.fontVariantPosition = positionType;
+        }
+    }
+
+    onEnableProperty: properties.fontVariantPositionState = KoSvgTextPropertiesModel.PropertySet;
     GridLayout {
         columns: 2;
         columnSpacing: columnSpacing;
         width: parent.width;
 
-        Item {
-            width: firstColumnWidth;
-            height: firstColumnWidth;
-            ToolButton {
-                id: revert;
-                icon.width: 22;
-                icon.height: 22;
-                display: AbstractButton.IconOnly
-                icon.source: "qrc:///light_view-refresh.svg"
-            }
+        RevertPropertyButton {
+            revertState: properties.fontVariantPositionState;
+            onClicked: properties.fontVariantPositionState = KoSvgTextPropertiesModel.PropertyUnset;
         }
 
         Label {
-            text: i18nc("@label:listbox", "Glyphs: Position:")
+            text: propertyTitle;
+            Layout.fillWidth: true;
         }
 
 
@@ -36,11 +59,14 @@ TextPropertyBase {
         }
         ComboBox {
             model: [
-                i18nc("@label:inlistbox", "Normal"),
-                i18nc("@label:inlistbox", "Super"),
-                i18nc("@label:inlistbox", "Sub")
+                { text: i18nc("@label:inlistbox", "Normal"), value: KoSvgText.PositionNormal},
+                { text: i18nc("@label:inlistbox", "Super"), value: KoSvgText.PositionSuper},
+                { text: i18nc("@label:inlistbox", "Sub"), value: KoSvgText.PositionSub}
             ]
             Layout.fillWidth: true;
+            textRole: "text";
+            valueRole: "value";
+            onActivated: positionType = currentValue;
             id: positionCmb;
         }
     }

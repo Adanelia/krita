@@ -1,8 +1,11 @@
-%Module PyKrita.krita
+%Module(name=PyKrita.krita,
+        keyword_arguments="Optional")
 
 %ModuleHeaderCode
 #pragma GCC visibility push(default)
 %End
+
+%Feature Krita_Qt5
 
 %Import QtCore/QtCoremod.sip
 %Import QtGui/QtGuimod.sip
@@ -61,3 +64,5 @@
 
 %Include GuidesConfig.sip
 %Include GridConfig.sip
+
+%Include FileDialog.sip

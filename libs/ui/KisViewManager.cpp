@@ -13,7 +13,6 @@
  *  SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-#include <stdio.h>
 
 #include "KisViewManager.h"
 #include <QPrinter>
@@ -34,13 +33,14 @@
 #include <QPoint>
 #include <QPrintDialog>
 #include <QPushButton>
-#include <QRect>
 #include <QScreen>
 #include <QScrollBar>
 #include <QStatusBar>
 #include <QToolBar>
 #include <QUrl>
 #include <QWidget>
+#include <QActionGroup>
+#include <QRegExp>
 
 #include <kactioncollection.h>
 #include <klocalizedstring.h>
@@ -79,7 +79,6 @@
 #include "kis_config.h"
 #include "kis_config_notifier.h"
 #include "kis_control_frame.h"
-#include "kis_coordinates_converter.h"
 #include "KisDocument.h"
 #include "kis_favorite_resource_manager.h"
 #include "kis_filter_manager.h"
@@ -89,7 +88,6 @@
 #include <kis_layer.h>
 #include "kis_mainwindow_observer.h"
 #include "kis_mask_manager.h"
-#include "kis_mimedata.h"
 #include "kis_mirror_manager.h"
 #include "kis_node_commands_adapter.h"
 #include "kis_node.h"
@@ -100,7 +98,6 @@
 #include <brushengine/kis_paintop_preset.h>
 #include "KisPart.h"
 #include <KoUpdater.h>
-#include "kis_selection.h"
 #include "kis_selection_mask.h"
 #include "kis_selection_manager.h"
 #include "kis_shape_controller.h"
@@ -117,6 +114,7 @@
 #include "kis_icon_utils.h"
 #include "kis_guides_manager.h"
 #include "kis_derived_resources.h"
+#include "kis_abstract_resources.h"
 #include "dialogs/kis_delayed_save_dialog.h"
 #include <KisMainWindow.h>
 #include "kis_signals_blocker.h"
@@ -125,8 +123,7 @@
 #include <KisIdleTasksManager.h>
 #include <KisImageBarrierLock.h>
 #include <KisTextPropertiesManager.h>
-
-#include "kis_filter_configuration.h"
+#include <kis_selection.h>
 
 #ifdef Q_OS_WIN
 #include "KisWindowsPackageUtils.h"
@@ -335,6 +332,8 @@ KisViewManager::KisViewManager(QWidget *parent, KisKActionCollection *_actionCol
     connect(KisConfigNotifier::instance(), SIGNAL(configChanged()), SLOT(slotUpdateAuthorProfileActions()));
     connect(KisConfigNotifier::instance(), SIGNAL(pixelGridModeChanged()), SLOT(slotUpdatePixelGridAction()));
 
+    connect(KoToolManager::instance(), SIGNAL(createOpacityResource(bool, KoToolBase*)), SLOT(slotCreateOpacityResource(bool, KoToolBase*)));
+
     KisInputProfileManager::instance()->loadProfiles();
 
     KisConfig cfg(true);
@@ -375,7 +374,6 @@ void KisViewManager::initializeResourceManager(KoCanvasResourceProvider *resourc
 {
     resourceManager->addDerivedResourceConverter(toQShared(new KisCompositeOpResourceConverter));
     resourceManager->addDerivedResourceConverter(toQShared(new KisEffectiveCompositeOpResourceConverter));
-    resourceManager->addDerivedResourceConverter(toQShared(new KisOpacityResourceConverter));
     resourceManager->addDerivedResourceConverter(toQShared(new KisFlowResourceConverter));
     resourceManager->addDerivedResourceConverter(toQShared(new KisFadeResourceConverter));
     resourceManager->addDerivedResourceConverter(toQShared(new KisScatterResourceConverter));
@@ -408,6 +406,11 @@ void KisViewManager::initializeResourceManager(KoCanvasResourceProvider *resourc
     KConfigGroup miscGroup = config->group("Misc");
     const uint handleRadius = miscGroup.readEntry("HandleRadius", 5);
     resourceManager->setHandleRadius(handleRadius);
+}
+
+void KisViewManager::testingInitializeOpacityToPresetResourceConverter(KoCanvasResourceProvider *resourceManager)
+{
+    resourceManager->addDerivedResourceConverter(toQShared(new KisOpacityToPresetOpacityResourceConverter));
 }
 
 KisKActionCollection *KisViewManager::actionCollection() const
@@ -790,7 +793,7 @@ void KisViewManager::createActions()
     d->viewPrintSize = actionManager()->createAction("view_print_size");
 
     d->actionAuthor  = new KSelectAction(KisIconUtils::loadIcon("im-user"), i18n("Active Author Profile"), this);
-    connect(d->actionAuthor, SIGNAL(triggered(QString)), this, SLOT(changeAuthorProfile(QString)));
+    connect(d->actionAuthor, SIGNAL(textTriggered(QString)), this, SLOT(changeAuthorProfile(QString)));
     actionCollection()->addAction("settings_active_author", d->actionAuthor);
     slotUpdateAuthorProfileActions();
 
@@ -1010,7 +1013,12 @@ void KisViewManager::slotSaveIncremental()
     // If the filename has a version, prepare it for incrementation
     if (foundVersion) {
         version = matches.at(matches.count() - 1);     //  Look at the last index, we don't care about other matches
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
         if (version.contains(QRegExp("[a-z]"))) {
+#else
+        if (QRegExp("[a-z]").containedIn(version)) {
+#endif
+
             version.chop(1);             //  Trim "."
             letter = version.right(1);   //  Save letter
             version.chop(1);             //  Trim letter
@@ -1027,7 +1035,11 @@ void KisViewManager::slotSaveIncremental()
         QString extensionPlusVersion = matches2.at(0);
         extensionPlusVersion.prepend(version);
         extensionPlusVersion.prepend("_");
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
         fileName.replace(regex2, extensionPlusVersion);
+#else
+        regex2.replaceIn(fileName, extensionPlusVersion);
+#endif
     }
 
     // Prepare the base for new version filename
@@ -1048,7 +1060,11 @@ void KisViewManager::slotSaveIncremental()
         } else {
             newVersion.append(".");
         }
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
         fileName.replace(regex, newVersion);
+#else
+        regex.replaceIn(fileName, newVersion);
+#endif
         fileAlreadyExists = QFileInfo(path + '/' + fileName).exists();
         if (fileAlreadyExists) {
             if (!letter.isNull()) {
@@ -1100,7 +1116,11 @@ void KisViewManager::slotSaveIncrementalBackup()
     if (workingOnBackup) {
         // Try to save incremental version (of backup), use letter for alt versions
         version = matches.at(matches.count() - 1);     //  Look at the last index, we don't care about other matches
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
         if (version.contains(QRegExp("[a-z]"))) {
+#else
+        if (QRegExp("[a-z]").containedIn(version)) {
+#endif
             version.chop(1);             //  Trim "."
             letter = version.right(1);   //  Save letter
             version.chop(1);             //  Trim letter
@@ -1124,7 +1144,11 @@ void KisViewManager::slotSaveIncrementalBackup()
             newVersion.prepend("~");
             if (!letter.isNull()) newVersion.append(letter);
             newVersion.append(".");
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
             backupFileName.replace(regex, newVersion);
+#else
+            regex.replaceIn(backupFileName, newVersion);
+#endif
             fileAlreadyExists = QFile(path + '/' + backupFileName).exists();
             if (fileAlreadyExists) {
                 if (!letter.isNull()) {
@@ -1155,14 +1179,22 @@ void KisViewManager::slotSaveIncrementalBackup()
         QString extensionPlusVersion = matches2.at(0);
         extensionPlusVersion.prepend(baseNewVersion);
         extensionPlusVersion.prepend("~");
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
         backupFileName.replace(regex2, extensionPlusVersion);
+#else
+        regex2.replaceIn(backupFileName, extensionPlusVersion);
+#endif
 
         // Save version with 1 number higher than the highest version found ignoring letters
         do {
             newVersion = baseNewVersion;
             newVersion.prepend("~");
             newVersion.append(".");
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
             backupFileName.replace(regex, newVersion);
+#else
+            regex.replaceIn(backupFileName, newVersion);
+#endif
             fileAlreadyExists = QFile(path + '/' + backupFileName).exists();
             if (fileAlreadyExists) {
                 // Prepare the base for new version filename, increment by 1
@@ -1716,4 +1748,14 @@ void KisViewManager::slotToggleFullscreen()
     KisMainWindow *main = mainWindow();
     main->viewFullscreen(!main->isFullScreen());
     cfg.fullscreenMode(main->isFullScreen());
+}
+
+void KisViewManager::slotCreateOpacityResource(bool isOpacityPresetMode, KoToolBase *tool)
+{
+    if (isOpacityPresetMode) {
+        KoToolManager::instance()->setConverter(toQShared(new KisOpacityToPresetOpacityResourceConverter), tool);
+    }
+    else {
+        KoToolManager::instance()->setAbstractResource(toQShared(new ToolOpacityAbstractResource(KoCanvasResource::Opacity, 1.0)), tool);
+    }
 }

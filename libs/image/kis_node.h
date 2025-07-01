@@ -10,6 +10,7 @@
 
 #include "kis_base_node.h"
 #include "KisNodeAdditionFlags.h"
+#include <KisQStringListFwd.h>
 
 #include "kritaimage_export.h"
 
@@ -17,8 +18,6 @@
 #include <KisRegion.h>
 
 class QRect;
-#include <QStringList>
-
 class KoProperties;
 
 class KisNodeVisitor;
@@ -417,8 +416,9 @@ private:
 
 };
 
+#ifndef Q_DECLARE_KISNODE
+#define  Q_DECLARE_KISNODE
 Q_DECLARE_METATYPE(KisNodeSP)
-
 Q_DECLARE_METATYPE(KisNodeWSP)
-
+#endif
 #endif

@@ -5,7 +5,6 @@
  */
 #include "Window.h"
 
-#include <QMenuBar>
 #include <QObject>
 #include <QAction>
 
@@ -93,11 +92,12 @@ View *Window::addView(Document *document)
     return 0;
 }
 
-void Window::showView(View *view)
+void Window::showView(View *v)
 {
-    if (views().contains(view)) {
-        KisView *v = view->view();
-        d->window->showView(v);
+    if (v && v->view()) {
+        KisView *view = v->view();
+        view->setVisible(true);
+        d->window->setActiveView(view);
     }
 }
 

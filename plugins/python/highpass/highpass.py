@@ -1,17 +1,31 @@
 # SPDX-License-Identifier: CC0-1.0
 
-from PyQt5 import QtCore
-from PyQt5.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDialog,
-    QDialogButtonBox,
-    QFormLayout,
-    QMessageBox,
-    QSpinBox,
-    QVBoxLayout,
-)
+try:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import (
+        QCheckBox,
+        QComboBox,
+        QDialog,
+        QDialogButtonBox,
+        QFormLayout,
+        QMessageBox,
+        QSpinBox,
+        QVBoxLayout,
+    )
+except:
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtWidgets import (
+        QCheckBox,
+        QComboBox,
+        QDialog,
+        QDialogButtonBox,
+        QFormLayout,
+        QMessageBox,
+        QSpinBox,
+        QVBoxLayout,
+    )
 from krita import Extension
+from builtins import i18n, i18nc, Application
 
 
 class HighpassExtension(Extension):
@@ -54,9 +68,9 @@ class HighpassExtension(Extension):
         form.addRow("", self.keepOriginal)
 
         self.buttonBox = QDialogButtonBox(self.dialog)
-        self.buttonBox.setOrientation(QtCore.Qt.Horizontal)
+        self.buttonBox.setOrientation(Qt.Orientation.Horizontal)
         self.buttonBox.setStandardButtons(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.buttonBox.accepted.connect(self.dialog.accept)
         self.buttonBox.accepted.connect(self.highpass)
         self.buttonBox.rejected.connect(self.dialog.reject)
@@ -67,7 +81,7 @@ class HighpassExtension(Extension):
 
         self.dialog.show()
         self.dialog.activateWindow()
-        self.dialog.exec_()
+        self.dialog.exec()
 
     def highpass(self):
         # XXX: Start undo macro

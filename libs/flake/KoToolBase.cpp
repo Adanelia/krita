@@ -23,6 +23,8 @@
 #include "KoCanvasController.h"
 #include "KoToolProxy.h"
 #include <kis_icon_utils.h>
+#include "KoDerivedResourceConverter.h"
+#include "KoAbstractCanvasResourceInterface.h"
 
 #include <klocalizedstring.h>
 #include <kactioncollection.h>
@@ -31,6 +33,10 @@
 #include <QDomDocument>
 #include <QDomElement>
 #include <QApplication>
+
+#include <QKeyEvent>
+#include <QInputMethodEvent>
+#include <QFocusEvent>
 
 KoToolBase::KoToolBase(KoCanvasBase *canvas)
     : d_ptr(new KoToolBasePrivate(this, canvas))
@@ -440,6 +446,40 @@ void KoToolBase::setMaskSyntheticEvents(bool value)
 {
     Q_D(KoToolBase);
     d->maskSyntheticEvents = value;
+}
+
+bool KoToolBase::isOpacityPresetMode() const
+{
+    Q_D(const KoToolBase);
+    return d->isOpacityPresetMode;
+}
+
+void KoToolBase::setIsOpacityPresetMode(bool value)
+{
+    Q_D(KoToolBase);
+    d->isOpacityPresetMode = value;
+}
+
+void KoToolBase::setConverter(KoDerivedResourceConverterSP converter) {
+    Q_D(KoToolBase);
+    d->toolCanvasResources.converters[converter->key()] = converter;
+}
+
+void KoToolBase::setAbstractResource(KoAbstractCanvasResourceInterfaceSP abstractResource) {
+    Q_D(KoToolBase);
+    d->toolCanvasResources.abstractResources[abstractResource->key()] = abstractResource;
+}
+
+QHash<int, KoAbstractCanvasResourceInterfaceSP> KoToolBase::toolAbstractResources()
+{
+    Q_D(KoToolBase);
+    return d->toolCanvasResources.abstractResources;
+}
+
+QHash<int, KoDerivedResourceConverterSP> KoToolBase::toolConverters()
+{
+    Q_D(KoToolBase);
+    return d->toolCanvasResources.converters;
 }
 
 void KoToolBase::updateOptionsWidgetIcons()

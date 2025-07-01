@@ -9,7 +9,6 @@
 #include <QIODevice>
 #include <QLocale>
 #include <QBuffer>
-#include <QByteArray>
 #include <QStandardPaths>
 #include <QFile>
 #include <QTextCodec>
@@ -247,11 +246,7 @@ bool KisTag::load(QIODevice &io)
             d->resourceType = value;
         }
         else if (key == s_defaultResources) {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
             d->defaultResources = value.split(',', Qt::SkipEmptyParts);
-#else
-            d->defaultResources = value.split(',', QString::SkipEmptyParts);
-#endif
         }
         else if (key == s_name) {
             d->name = value;

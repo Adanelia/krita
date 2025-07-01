@@ -3,40 +3,69 @@
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
  */
-import QtQuick 2.0
-import QtQuick.Controls 2.0
+import QtQuick 2.15
+import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.12
 import org.krita.flake.text 1.0
+import org.krita.components 1.0
 
 TextPropertyBase {
-    propertyName: i18nc("@title:group", "Tab Size");
-    propertyType: TextPropertyBase.Paragraph;
+    propertyTitle: i18nc("@title:group", "Tab Size");
+    propertyName: "tab-size";
+    propertyType: TextPropertyConfigModel.Paragraph;
     toolTip: i18nc("@info:tooltip",
                    "Tab Size allows defining the size of tabulation characters.");
     searchTerms: i18nc("comma separated search terms for the tab-size property, matching is case-insensitive",
                        "tab-size");
-    property alias tabSize: tabSizeSpn.value;
-    property int tabSizeUnit: TabSizeModel.Spaces;
+    property alias tabSize: converter.dataValue;
+    property alias tabSizeUnit: converter.dataUnit;
+
+    property var unitMap: [
+        { user: CssQmlUnitConverter.Pt, data: TabSizeModel.Absolute},
+        { user: CssQmlUnitConverter.Em, data: TabSizeModel.Em},
+        { user: CssQmlUnitConverter.Ex, data: TabSizeModel.Ex},
+        { user: CssQmlUnitConverter.Cap, data: TabSizeModel.Cap},
+        { user: CssQmlUnitConverter.Ch, data: TabSizeModel.Ch},
+        { user: CssQmlUnitConverter.Ic, data: TabSizeModel.Ic},
+        { user: CssQmlUnitConverter.Lh, data: TabSizeModel.Lh},
+        { user: CssQmlUnitConverter.Spaces, data: TabSizeModel.Spaces},
+    ]
+
+    CssQmlUnitConverter {
+        id: converter;
+        dpi: dpi;
+        dataMultiplier: tabSizeSpn.multiplier;
+
+        onUserValueChanged: tabSizeSpn.value = userValue;
+        onUserUnitChanged: tabSizeUnitCmb.currentIndex = tabSizeUnitCmb.indexOfValue(userUnit);
+    }
 
     onPropertiesUpdated: {
         blockSignals = true;
-        tabSize = properties.tabSize.value * tabSizeSpn.multiplier;
-        tabSizeUnit = properties.tabSize.unit;
-        visible = properties.tabSizeState !== KoSvgTextPropertiesModel.PropertyUnset;
+        converter.dpi = canvasDPI;
+        converter.setFontMetricsFromTextPropertiesModel(properties);
+        converter.setDataValueAndUnit(properties.tabSize.value, properties.tabSize.unit);
+
+        propertyState = [properties.tabSizeState];
+        setVisibleFromProperty();
         blockSignals = false;
     }
 
     onTabSizeChanged: {
         if (!blockSignals) {
-            properties.tabSize.value = tabSize / tabSizeSpn.multiplier;
+            properties.tabSize.value = tabSize;
         }
     }
 
     onTabSizeUnitChanged: {
-        tabSizeUnitCmb.currentIndex = tabSizeUnitCmb.indexOfValue(tabSizeUnit);
         if (!blockSignals) {
             properties.tabSize.unit = tabSizeUnit;
         }
+    }
+
+    Component.onCompleted: {
+        converter.setDataUnitMap(unitMap);
+        converter.setDataValueAndUnit(0, 0);
     }
 
     onEnableProperty: properties.tabSizeState = KoSvgTextPropertiesModel.PropertySet;
@@ -52,7 +81,7 @@ TextPropertyBase {
             onClicked: properties.tabSizeState = KoSvgTextPropertiesModel.PropertyUnset;
         }
         Label {
-            text: propertyName
+            text: propertyTitle
             Layout.columnSpan: 2;
             elide: Text.ElideRight;
             Layout.fillWidth: true;
@@ -68,49 +97,27 @@ TextPropertyBase {
             id: tabSizeSpn;
             Layout.fillWidth: true;
             from: 0;
-            to: 100 * multiplier;
+            to: 999 * multiplier;
+            onValueChanged: converter.userValue = value;
         }
-        ComboBox {
+        SqueezedComboBox {
             id: tabSizeUnitCmb;
-            property QtObject spinBoxControl: tabSizeSpn;
-            model: [
-                {text: i18nc("@label:inlistbox", "Spaces"), value: TabSizeModel.Spaces},
-                {text: i18nc("@label:inlistbox", "Pt"), value: TabSizeModel.Absolute},
-                {text: i18nc("@label:inlistbox", "Em"), value: TabSizeModel.Em},
-                {text: i18nc("@label:inlistbox", "Ex"), value: TabSizeModel.Ex}
-            ]
-            textRole: "text";
+            model:converter.userUnitModel;
+            textRole: "description";
             valueRole: "value";
-            Layout.fillWidth: true;
+            displayText: converter.symbol;
             wheelEnabled: true;
-
-            onActivated: {
-                if (currentValue === TabSizeModel.Spaces) {
-                    tabSizeUnit = currentValue;
-                    spinBoxControl.value = properties.tabSize.value * tabSizeSpn.multiplier;
-                } else {
-
-                    var currentValueInPt = 0;
-                    if (tabSizeUnit === TabSizeModel.Absolute) {
-                        currentValueInPt = spinBoxControl.value;
-                    } else if (tabSizeUnit === TabSizeModel.Ex) {
-                        currentValueInPt = spinBoxControl.value * properties.resolvedXHeight(false);
-                    } else { // EM, Lines
-                        currentValueInPt = spinBoxControl.value * properties.resolvedFontSize(false);
-                    }
-
-                    var newValue = 0;
-                    if (currentValue === TabSizeModel.Absolute) {
-                        newValue = currentValueInPt
-                    } else if (currentValue === TabSizeModel.Ex) {
-                        newValue = currentValueInPt / properties.resolvedXHeight(false);
-                    } else { // Em
-                        newValue = currentValueInPt / properties.resolvedFontSize(false);
-                    }
-                    tabSizeUnit = currentValue;
-                    spinBoxControl.value = newValue;
-                }
+            Layout.preferredWidth: symbolWidth.width+leftPadding+rightPadding+spacing+indicator.width;
+            TextMetrics {
+                id: symbolWidth;
+                font: tabSizeUnitCmb.font;
+                text: tabSizeUnitCmb.displayText;
             }
+            Layout.maximumWidth: implicitWidth;
+
+
+
+            onCurrentValueChanged: converter.userUnit = currentValue;
         }
 
     }

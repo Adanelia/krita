@@ -14,9 +14,14 @@ import json  # For writing to json.
 import os  # For finding the script location.
 from pathlib import Path  # For reading all the files in a directory.
 import random  # For selecting two random words from a list.
-from PyQt5.QtWidgets import QWidget, QWizard, QWizardPage, QHBoxLayout, QFormLayout, QFileDialog, QLineEdit, QPushButton, QCheckBox, QLabel, QDialog
-from PyQt5.QtCore import QDate, QLocale, QUuid
-from krita import *
+try:
+    from PyQt6.QtWidgets import QWizard, QWizardPage, QHBoxLayout, QFormLayout, QLineEdit, QPushButton, QCheckBox, QLabel, QDialog, QMessageBox
+    from PyQt6.QtCore import QLocale, QUuid
+except:
+    from PyQt5.QtWidgets import QWizard, QWizardPage, QHBoxLayout, QFormLayout, QLineEdit, QPushButton, QCheckBox, QLabel, QDialog, QMessageBox
+    from PyQt5.QtCore import QLocale, QUuid
+from krita import FileDialog
+from builtins import i18n
 from . import comics_metadata_dialog
 
 """
@@ -51,19 +56,19 @@ class ComicsProjectSetupWizard():
         self.projectDirectory = None
         
         while self.projectDirectory == None:
-            self.projectDirectory = QFileDialog.getExistingDirectory(caption=i18n("Where should the comic project go?"), options=QFileDialog.ShowDirsOnly)
+            self.projectDirectory = FileDialog.getExistingDirectory(caption=i18n("Where should the comic project go?"))
             if os.path.exists(self.projectDirectory) is False:
                 return
             if os.access(self.projectDirectory, os.W_OK) is False:
-                QMessageBox.warning(None, i18n("Folder cannot be used"), i18n("Krita doesn't have write access to this folder, so files cannot be made. Please choose a different folder."), QMessageBox.Ok)
+                QMessageBox.warning(None, i18n("Folder cannot be used"), i18n("Krita doesn't have write access to this folder, so files cannot be made. Please choose a different folder."), QMessageBox.StandardButton.Ok)
                 self.projectDirectory = None
         self.pagesDirectory = os.path.relpath(self.projectDirectory, self.projectDirectory)
         self.exportDirectory = os.path.relpath(self.projectDirectory, self.projectDirectory)
 
         wizard = QWizard()
         wizard.setWindowTitle(i18n("Comic Project Setup"))
-        wizard.setOption(QWizard.IndependentPages, True)
-        wizard.setWizardStyle(QWizard.ClassicStyle)
+        wizard.setOption(QWizard.WizardOption.IndependentPages, True)
+        wizard.setWizardStyle(QWizard.WizardStyle.ClassicStyle)
 
         # Set up the UI for the wizard
         basicsPage = QWizardPage()
@@ -139,7 +144,7 @@ class ComicsProjectSetupWizard():
         wizard.addPage(foldersPage)
 
         # Execute the wizard, and after wards...
-        if (wizard.exec_()):
+        if (wizard.exec()):
 
             # First get the directories, check if the directories exist, and otherwise make them.
             self.pagesDirectory = self.lnPagesDirectory.text()
@@ -186,7 +191,7 @@ class ComicsProjectSetupWizard():
         self.setupDictionary["language"] = str(self.cmbLanguage.codeForCurrentEntry())
         dialog.setConfig(self.setupDictionary)
         dialog.setConfig(self.setupDictionary)
-        if (dialog.exec_() == QDialog.Accepted):
+        if (dialog.exec() == QDialog.DialogCode.Accepted):
             self.setupDictionary = dialog.getConfig(self.setupDictionary)
             self.cmbLanguage.setEntryToCode(self.setupDictionary["language"])
             

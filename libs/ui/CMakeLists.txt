@@ -1,6 +1,3 @@
-include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/qtlockedfile
-)
 
 if (ANDROID)
     # We explicitly set QT_OPENGL_ES_3 here because Qt for some reason does
@@ -8,7 +5,9 @@ if (ANDROID)
     # See also: https://bugreports.qt.io/browse/QTBUG-64703
     # This is not needed for ARM GNU/Linux environments.
     add_definitions(-DQT_OPENGL_ES_3)
-    include_directories (${Qt5AndroidExtras_INCLUDE_DIRS})
+    if (QT_MAJOR_VERSION STREQUAL "5")
+        include_directories (${Qt5AndroidExtras_INCLUDE_DIRS})
+    endif()
 endif()
 
 add_subdirectory( tests )
@@ -76,6 +75,8 @@ set(kritaui_LIB_SRCS
     dialogs/KisDlgConfigureCumulativeUndo.cpp
     dialogs/KisCumulativeUndoModel.cpp
     dialogs/KisColorSpaceConversionDialog.cpp
+    dialogs/KisProofingConfigModel.cpp
+    dialogs/KisFrameRateLimitModel.cpp
 
     flake/kis_node_dummies_graph.cpp
     flake/kis_dummies_facade_base.cpp
@@ -180,6 +181,7 @@ set(kritaui_LIB_SRCS
     opengl/KisOpenGLSync.cpp
     opengl/KisOpenGLBufferCreationGuard.cpp
     opengl/KisOpenGLCanvasRenderer.cpp
+    opengl/KisOpenGLContextSwitchLock.cpp
     kis_fps_decoration.cpp
 
     tool/KisToolChangesTracker.cpp
@@ -330,6 +332,7 @@ set(kritaui_LIB_SRCS
     input/kis_input_manager.cpp
     input/kis_input_manager_p.cpp
     input/kis_extended_modifiers_mapper.cpp
+    input/KisExtendedModifiersMapperPluginInterface.cpp
     input/kis_abstract_input_action.cpp
     input/kis_tool_invocation_action.cpp
     input/kis_pan_action.cpp
@@ -438,8 +441,6 @@ set(kritaui_LIB_SRCS
     KisViewManager.cpp
     kis_mirror_manager.cpp
 
-    qtlockedfile/qtlockedfile.cpp
-
     qtsingleapplication/qtlocalpeer.cpp
     qtsingleapplication/qtsingleapplication.cpp
 
@@ -486,28 +487,10 @@ if (Mlt7_FOUND)
 endif()
 
 if(WIN32)
-    # Private headers are needed for:
-    #    * KisDlgCustomTabletResolution
-    #    * KisScreenInformationAdapter
-    include_directories(SYSTEM ${Qt5Gui_PRIVATE_INCLUDE_DIRS})
-
     set(kritaui_LIB_SRCS
         ${kritaui_LIB_SRCS}
-        qtlockedfile/qtlockedfile_win.cpp
-    )
-    if (NOT USE_QT_TABLET_WINDOWS)
-        set(kritaui_LIB_SRCS
-            ${kritaui_LIB_SRCS}
-            input/wintab/kis_tablet_support_win.cpp
-            input/wintab/kis_screen_size_choice_dialog.cpp
-            input/wintab/kis_tablet_support_win8.cpp
-            )
-    else()
-        set(kritaui_LIB_SRCS
-            ${kritaui_LIB_SRCS}
-            dialogs/KisDlgCustomTabletResolution.cpp
-            )
-    endif()
+        dialogs/KisDlgCustomTabletResolution.cpp
+        )
 endif()
 
     set(kritaui_LIB_SRCS
@@ -531,13 +514,6 @@ endif()
         input/wintab/drawpile_tablettester/tablettester.cpp
         input/wintab/drawpile_tablettester/tablettest.cpp
     )
-
-if (UNIX)
-    set(kritaui_LIB_SRCS
-        ${kritaui_LIB_SRCS}
-        qtlockedfile/qtlockedfile_unix.cpp
-        )
-endif()
 
 if (ENABLE_UPDATERS)
 	if (UNIX)
@@ -652,7 +628,6 @@ ki18n_wrap_ui(kritaui_LIB_SRCS
     layerstyles/wdgKisLayerStyleAngleSelector.ui
 
     wdgsplash.ui
-    input/wintab/kis_screen_size_choice_dialog.ui
     input/wintab/drawpile_tablettester/tablettest.ui
 
     animation/wdg_animationrenderer.ui
@@ -666,19 +641,19 @@ ki18n_wrap_ui(kritaui_LIB_SRCS
 )
 
 if(WIN32)
-    if(USE_QT_TABLET_WINDOWS)
-        ki18n_wrap_ui(kritaui_LIB_SRCS
-            dialogs/KisDlgCustomTabletResolution.ui
-        )
-    else()
-        ki18n_wrap_ui(kritaui_LIB_SRCS
-            input/wintab/kis_screen_size_choice_dialog.ui
-        )
-    endif()
+    ki18n_wrap_ui(kritaui_LIB_SRCS
+        dialogs/KisDlgCustomTabletResolution.ui
+    )
 endif()
 
 
 kis_add_library(kritaui SHARED ${kritaui_HEADERS_MOC} ${kritaui_LIB_SRCS})
+
+target_sources(kritaui
+  PRIVATE
+    kis_abstract_resources.h
+    kis_abstract_resources.cpp
+)
 generate_export_header(kritaui BASE_NAME kritaui)
 
 target_link_libraries(kritaui
@@ -705,6 +680,30 @@ target_link_libraries(kritaui
         kritaresources
 )
 
+if(WIN32)
+    # Private headers are needed for:
+    #    * KisDlgCustomTabletResolution
+    #    * KisScreenInformationAdapter
+    #    * dialogs/kis_dlg_preferences.cc
+    set_source_files_properties(
+        dialogs/KisDlgCustomTabletResolution.cpp
+        opengl/KisScreenInformationAdapter.cpp
+        dialogs/kis_dlg_preferences.cc # for WinTab switching API
+        kis_config.cc # for logging the WinTab API
+        PROPERTIES
+        INCLUDE_DIRECTORIES "${Qt${QT_MAJOR_VERSION}Gui_PRIVATE_INCLUDE_DIRS}"
+        )
+endif()
+
+if (QT_MAJOR_VERSION STREQUAL "6")
+    target_link_libraries(kritaui
+        PRIVATE
+            Qt6::OpenGLWidgets
+            Qt6::SvgWidgets
+            KF6::ColorScheme
+    )
+endif()
+
 if (Mlt7_FOUND)
     target_link_libraries(kritaui PRIVATE SDL2::SDL2 Mlt7::mlt Mlt7::mlt++)
 endif()
@@ -713,11 +712,6 @@ if (ANDROID)
     target_link_libraries(kritaui PRIVATE GLESv3)
     target_link_libraries(kritaui PUBLIC Qt${QT_MAJOR_VERSION}::Gui)
     target_link_libraries(kritaui PRIVATE Qt${QT_MAJOR_VERSION}::AndroidExtras)
-endif()
-
-if (NOT WIN32 AND NOT APPLE AND NOT ANDROID AND NOT HAIKU)
-  target_link_libraries(kritaui PRIVATE ${X11_X11_LIB}
-                                ${X11_Xinput_LIB})
 endif()
 
 if (HAIKU)
@@ -739,15 +733,6 @@ if(OpenEXR_FOUND)
   target_link_libraries(kritaui PUBLIC ${LINK_OPENEXR_LIB})
 endif()
 
-# Add VSync disable workaround
-if(NOT WIN32 AND NOT APPLE AND NOT ANDROID AND NOT HAIKU AND QT_MAJOR_VERSION STREQUAL "5")
-    target_link_libraries(kritaui PRIVATE ${CMAKE_DL_LIBS} Qt${QT_MAJOR_VERSION}::X11Extras)
-endif()
-
-if (X11_FOUND AND (QT_MAJOR_VERSION STREQUAL "5"))
-    target_link_libraries(kritaui PRIVATE Qt${QT_MAJOR_VERSION}::X11Extras ${X11_LIBRARIES})
-endif()
-
 target_include_directories(kritaui
     PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/canvas>
@@ -767,7 +752,7 @@ install(TARGETS kritaui  ${INSTALL_TARGETS_DEFAULT_ARGS})
 
 
 if (APPLE)
-    install(FILES osx.stylesheet DESTINATION ${DATA_INSTALL_DIR}/krita)
+    install(FILES osx.stylesheet DESTINATION ${KDE_INSTALL_DATADIR}/krita)
 endif ()
 
 if (UNIX AND BUILD_TESTING AND ENABLE_UPDATERS)

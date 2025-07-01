@@ -34,6 +34,8 @@
 class KoID;
 class KisInputConfigurationPage;
 class KoConfigAuthorPage;
+class KisProofingConfigModel;
+class KisFrameRateLimitModel;
 
 /**
  *  "General"-tab for preferences dialog
@@ -90,10 +92,14 @@ public:
     int zoomMarginSize();
     bool switchSelectionCtrlAlt();
     bool convertToImageColorspaceOnImport();
+
     bool autopinLayersToTimeline();
     bool adaptivePlaybackRange();
+    bool autoZoomTimelineToPlaybackRange();
+
     bool renameMergedLayers();
     bool renamePastedLayers();
+    bool renameDuplicatedLayers();
     QString exportMimeType();
     int forcedFontDpi();
 
@@ -179,12 +185,19 @@ private Q_SLOTS:
     void toggleAllowMonitorProfileSelection(bool useSystemProfile);
     void toggleUseDefaultColorSpace(bool useDefColorSpace);
 
+    void updateProofingWidgets();
+    void proofingDisplayModeUpdated();
+    void proofingConversionIntentUpdated();
+    void proofingDisplayIntentUpdated();
+    void updateProofingDisplayInfo();
+
 public:
     void setDefault();
     WdgColorSettings  *m_page;
     QButtonGroup m_pasteBehaviourGroup;
     QList<QLabel*> m_monitorProfileLabels;
     QList<KisSqueezedComboBox*> m_monitorProfileWidgets;
+    QScopedPointer<KisProofingConfigModel> m_proofModel;
 };
 
 //=======================
@@ -257,6 +270,7 @@ private:
     QVector<SliderAndSpinBoxSync*> m_syncs;
     int m_lastUsedThreadsLimit;
     int m_lastUsedClonesLimit;
+    QScopedPointer<KisFrameRateLimitModel> m_frameRateModel;
 };
 
 //=======================

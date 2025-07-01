@@ -7,10 +7,7 @@
 
 #include "kis_statusbar.h"
 
-#include <QLabel>
-#include <QFontMetrics>
 #include <QToolButton>
-#include <QPushButton>
 #include <QAction>
 #include <QToolTip>
 #include <QStatusBar>
@@ -357,8 +354,14 @@ void KisStatusBar::slotCanvasRotationChanged()
     KisCanvas2 *canvas = m_viewManager->canvasBase();
     if (!canvas) return;
 
-    KisSignalsBlocker l(m_canvasAngleSelector);
-    m_canvasAngleSelector->setAngle(canvas->rotationAngle());
+    const qreal angleDiff = qAbs(m_canvasAngleSelector->angle()) -
+                            qAbs(canvas->rotationAngle());
+
+    // Only update the UI if the angle difference is big enough. This improves the performance.
+    if (qAbs(angleDiff) >= 0.01) {
+        KisSignalsBlocker l(m_canvasAngleSelector);
+        m_canvasAngleSelector->setAngle(canvas->rotationAngle());
+    }
 }
 
 void KisStatusBar::updateSelectionToolTip()

@@ -115,6 +115,16 @@ void KoFileDialog::setImageFilters()
     setMimeTypeFilters(imageFilters);
 }
 
+void KoFileDialog::setNameFilter(const QString &filter)
+{
+    d->filterList = filter.split(";;");
+}
+
+void KoFileDialog::selectNameFilter(const QString &filter)
+{
+    d->defaultFilter = filter;
+}
+
 QString KoFileDialog::selectedNameFilter() const
 {
     return d->fileDialog->selectedNameFilter();
@@ -384,11 +394,7 @@ QStringList KoFileDialog::splitNameFilter(const QString &nameFilter, QStringList
         description = nameFilter.left(nameFilter.indexOf("(") -1).trimmed();
     }
 
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
     QStringList entries = nameFilter.mid(nameFilter.indexOf("(") + 1).split(" ", Qt::SkipEmptyParts);
-#else
-    QStringList entries = nameFilter.mid(nameFilter.indexOf("(") + 1).split(" ", QString::SkipEmptyParts);
-#endif
 
     entries.sort();
     Q_FOREACH (QString entry, entries) {

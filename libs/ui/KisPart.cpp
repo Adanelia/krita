@@ -30,6 +30,7 @@
 #include "KisViewManager.h"
 #include "KisImportExportManager.h"
 #include "KoDocumentInfo.h"
+#include "KisUsageLogger.h"
 
 #include <kis_debug.h>
 #include <KoResourcePaths.h>
@@ -38,6 +39,7 @@
 #include <QMenu>
 #include <QScopedPointer>
 #include <QMap>
+#include <QRegularExpression>
 
 #include <QMenuBar>
 #include <klocalizedstring.h>
@@ -46,7 +48,6 @@
 #include <kconfiggroup.h>
 #include <QKeySequence>
 
-#include <QDialog>
 #include <QApplication>
 #include <QDomDocument>
 #include <QDomElement>
@@ -568,7 +569,7 @@ void KisPart::openTemplate(const QUrl &url)
     if (ok) {
         QString mimeType = KisMimeDatabase::mimeTypeForFile(url.toLocalFile());
         // in case this is a open document template remove the -template from the end
-        mimeType.remove( QRegExp( "-template$" ) );
+        mimeType.remove( QRegularExpression( "-template$" ) );
         document->setMimeTypeAfterLoading(mimeType);
         document->resetPath();
         document->setReadWrite(true);
@@ -721,6 +722,10 @@ void KisPart::setPlaybackEngine(KisPlaybackEngine *p_playbackEngine)
     // of the emitted signal
     QScopedPointer backup(p_playbackEngine);
     d->playbackEngine.swap(backup);
+
+    // Log all changes to playback engine for easier debugging.
+    // (See `krita.log` or `Help > Show Krita log for bug reports`.)
+    KisUsageLogger::log("Audio Playback Engine: " + QString(p_playbackEngine->metaObject()->className()));
 
     Q_EMIT playbackEngineChanged(p_playbackEngine);
 }

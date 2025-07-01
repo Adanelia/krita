@@ -64,6 +64,16 @@ print_error() {
     printf "\e[31m%s %s\e[0m\n" "Error:" "${1}"
 }
 
+# Debug helper function
+debug_script() {
+    echo "## running subcmd: ${@}"
+    ${@}
+}
+
+if [[ -z ${DEBUG} ]]; then
+    RUN_CMD="debug_script"
+fi
+
 DMG_title="krita" #if changed krita.temp.dmg must be deleted manually
 
 # There is some duplication between build and deploy scripts
@@ -81,9 +91,18 @@ KRITA_DMG_TEMPLATE=${BUILDROOT}/_kritadmg-template
 export PATH=${KIS_INSTALL_DIR}/bin:$PATH
 
 # flags for OSX environment
-# We only support from 10.13 up
-export MACOSX_DEPLOYMENT_TARGET=10.14
-export QMAKE_MACOSX_DEPLOYMENT_TARGET=10.14
+echo "Trying to guess Qt version..."
+if [[ -n "${KIS_INSTALL_DIR}/lib/QtCore.framework/Versions/A/QtCore" ]]; then
+    echo " Found Qt6"
+    # We only support from 12 up
+    export MACOSX_DEPLOYMENT_TARGET=12
+    export QMAKE_MACOSX_DEPLOYMENT_TARGET=12
+else
+    echo " Assuming Qt5"
+    # We only support from 10.14 up
+    export MACOSX_DEPLOYMENT_TARGET=10.14
+    export QMAKE_MACOSX_DEPLOYMENT_TARGET=10.14
+fi
 
 KRITA_VERSION="$(${KIS_INSTALL_DIR}/bin/krita_version -v)"
 
@@ -366,13 +385,16 @@ find_missing_libs (){
 }
 
 copy_missing_lib_wlink() {
-    local libfile=${1}
+    local inlibfile=${1}
     local dst=${2}
 
+    local sourceLibDir=$(dirname ${inlibfile})
+    local libfile=$(basename ${inlibfile})
+
     while [[ true ]]; do
-        echo "cp -av ${libfile} ${dst}"
-        cp -av ${libfile} ${dst}
-        libfile=$(readlink ${libfile})
+        local lib="${sourceLibDir}/${libfile}"
+        ${RUN_CMD} cp -av ${lib} ${dst}
+        libfile=$(readlink ${lib})
         if [[ -z ${libfile} ]]; then break; fi
     done
 }
@@ -576,7 +598,7 @@ run_macdeployqt() {
         -verbose=0 \
         -executable=${KRITA_DMG}/krita.app/Contents/MacOS/krita \
         -libpath=${KIS_INSTALL_DIR}/lib \
-        -qmldir=${KIS_INSTALL_DIR}/qml \
+        -qmldir=${KIS_SRC_DIR}/plugins/dockers/textproperties \
         -appstore-compliant
         # -extra-plugins=${KIS_INSTALL_DIR}/lib/kritaplugins \
         # -extra-plugins=${KIS_INSTALL_DIR}/lib/plugins \
@@ -662,9 +684,6 @@ krita_deploy () {
 
     echo "Copying mandatory libs..."
     rsync -priul ${KIS_INSTALL_DIR}/lib/libKF5* ${KIS_INSTALL_DIR}/lib/libkrita* Frameworks/
-
-    echo "Copying qml..."
-    rsync -prul ${KIS_INSTALL_DIR}/qml/ Resources/qml
 
     echo "Copying plugins..."
     local KRITA_DMG_PLUGIN_DIR="${KRITA_DMG}/krita.app/Contents/PlugIns"

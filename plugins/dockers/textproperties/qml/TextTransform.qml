@@ -3,14 +3,15 @@
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
  */
-import QtQuick 2.0
-import QtQuick.Controls 2.0
-import QtQuick.Layouts 1.12
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtQuick.Layouts 1.15
 import org.krita.flake.text 1.0
 
 TextPropertyBase {
-    propertyName: i18nc("@title:group", "Text Transform");
-    propertyType: TextPropertyBase.Character;
+    propertyTitle: i18nc("@title:group", "Text Transform");
+    propertyName: "text-transform";
+    propertyType: TextPropertyConfigModel.Character;
     toolTip: i18nc("@info:tooltip",
                    "Text Transform allows transforming the given range of characters, for example, by setting them uppercase, or switching out half-width forms for full-width forms.");
     searchTerms: i18nc("comma separated search terms for the text-transform property, matching is case-insensitive",
@@ -24,7 +25,9 @@ TextPropertyBase {
         fullWidth = properties.textTransform.fullWidth;
         fullSizeKana = properties.textTransform.fullSizeKana;
         capitals = properties.textTransform.capitals;
-        visible = properties.textTransformState !== KoSvgTextPropertiesModel.PropertyUnset;
+
+        propertyState = [properties.textTransformState];
+        setVisibleFromProperty();
         blockSignals = false;
     }
 
@@ -60,7 +63,7 @@ TextPropertyBase {
         }
 
         Label {
-            text: propertyName;
+            text: propertyTitle;
             Layout.columnSpan: 2;
             elide: Text.ElideRight;
             Layout.fillWidth: true;
@@ -77,17 +80,19 @@ TextPropertyBase {
             text:  i18nc("@label:listbox", "Case:")
         }
 
-        ComboBox {
+        SqueezedComboBox {
             id: textTransformCaseCmb;
             model: [
-                {text: i18nc("@label:inlistbox", "None"), value: KoSvgText.TextTransformNone},
-                {text: i18nc("@label:inlistbox", "Capitalize"), value: KoSvgText.TextTransformCapitalize},
-                {text: i18nc("@label:inlistbox", "Upper Case"), value: KoSvgText.TextTransformUppercase},
-                {text: i18nc("@label:inlistbox", "Lower Case"), value: KoSvgText.TextTransformLowercase}
+                {text: i18nc("@label:inlistbox", "None"), value: KoSvgText.TextTransformNone, icon: ""},
+                {text: i18nc("@label:inlistbox", "Capitalize"), value: KoSvgText.TextTransformCapitalize, icon: "qrc:///16_light_format-text-capitalize.svg"},
+                {text: i18nc("@label:inlistbox", "Upper Case"), value: KoSvgText.TextTransformUppercase, icon: "qrc:///16_light_format-text-uppercase.svg"},
+                {text: i18nc("@label:inlistbox", "Lower Case"), value: KoSvgText.TextTransformLowercase, icon: "qrc:///16_light_format-text-lowercase.svg"}
             ]
             Layout.fillWidth: true
             textRole: "text";
             valueRole: "value";
+            iconRole: "icon";
+            iconSize: 16;
             onActivated: capitals = currentValue;
             wheelEnabled: true;
         }

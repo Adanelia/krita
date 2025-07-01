@@ -12,6 +12,8 @@
 #include <lager/cursor.hpp>
 #include <lager/extra/qt.hpp>
 
+#include <QObject>
+
 class PAINTOP_EXPORT KisDrawingAngleSensorModel : public QObject
 {
     Q_OBJECT
@@ -23,7 +25,8 @@ public:
     lager::cursor<KisDrawingAngleSensorData> m_data;
     LAGER_QT_CURSOR(bool, fanCornersEnabled);
     LAGER_QT_CURSOR(int, fanCornersStep);
-    LAGER_QT_CURSOR(int, angleOffset);
+    LAGER_QT_CURSOR(qreal, angleOffset);
+    LAGER_QT_CURSOR(qreal, angleOffsetInverted);
     LAGER_QT_CURSOR(bool, lockedAngleMode);
 };
 

@@ -9,6 +9,8 @@
 
 #include <boost/optional.hpp>
 
+#include <QtGlobal>
+
 #include <QOpenGLContext>
 #include <QOpenGLDebugLogger>
 #include <QOpenGLFunctions>
@@ -16,6 +18,7 @@
 #include <QApplication>
 #include <QScreen>
 #include <QPixmapCache>
+#include <QColorSpace>
 
 #include <QDir>
 #include <QFile>
@@ -34,6 +37,7 @@
 #include <kis_config.h>
 #include <kis_debug.h>
 
+#include <KisSurfaceColorSpaceWrapper.h>
 #include "KisOpenGLModeProber.h"
 #include "opengl/kis_opengl.h"
 
@@ -43,6 +47,7 @@
 #  define GL_RENDERER 0x1F01
 #endif
 
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
 /// openGL ES headers use a bit different names in prototypes,
 /// add a workaround for it
 #if !defined APIENTRYP && defined GL_APIENTRYP
@@ -50,6 +55,9 @@
 #endif
 
 typedef void (APIENTRYP PFNGLINVALIDATEBUFFERDATAPROC) (GLuint buffer);
+#else
+typedef void (QOPENGLF_APIENTRYP PFNGLINVALIDATEBUFFERDATAPROC) (GLuint buffer);
+#endif
 
 namespace
 {
@@ -160,6 +168,7 @@ void KisOpenGL::initialize()
     debugOut << "OpenGL Info\n";
 
     if (openGLCheckResult) {
+        debugOut << "\n  Qt Platform Name: " << QGuiApplication::platformName();
         debugOut << "\n  Vendor: " << openGLCheckResult->vendorString();
         debugOut << "\n  Renderer: " << openGLCheckResult->rendererString();
         debugOut << "\n  Driver version: " << openGLCheckResult->driverVersionString();
@@ -325,8 +334,8 @@ QString KisOpenGL::currentDriver()
     return QString();
 }
 
-// XXX Temporary function to allow LoD on OpenGL3 without triggering
-// all of the other 3.2 functionality, can be removed once we move to Qt5.7
+// Check whether we can allow LoD on OpenGL3 without triggering
+// all of the other 3.2 functionality.
 bool KisOpenGL::supportsLoD()
 {
     initialize();
@@ -575,7 +584,9 @@ KisOpenGL::RendererConfig generateSurfaceConfig(KisOpenGL::OpenGLRenderer render
     KisOpenGL::RendererConfig config;
     config.angleRenderer = info.second;
 
+    
     dbgOpenGL << "Requesting configuration for" << info.first << info.second;
+    dbgOpenGL << "Requesting root surface format" << rootSurfaceFormat;
 
     QSurfaceFormat &format = config.format;
     const auto openGLModuleType = determineOpenGLImplementation(info);
@@ -708,16 +719,13 @@ public:
     }
 
     bool operator()(const KisOpenGL::RendererConfig &lhs, const KisOpenGL::RendererConfig &rhs) const {
-        KIS_SAFE_ASSERT_RECOVER_NOOP(m_preferredColorSpace != KisSurfaceColorSpace::DefaultColorSpace);
-
+        KIS_SAFE_ASSERT_RECOVER_NOOP(m_preferredColorSpace != KisSurfaceColorSpaceWrapper::DefaultColorSpace);
         if (m_preferredRendererByUser != KisOpenGL::RendererSoftware) {
             ORDER_BY(!isFallbackOnly(lhs.rendererId()), !isFallbackOnly(rhs.rendererId()));
         }
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
-        ORDER_BY(isPreferredColorSpace(lhs.format.colorSpace()),
-                 isPreferredColorSpace(rhs.format.colorSpace()));
-#endif
+        ORDER_BY(isPreferredColorSpace(lhs.format),
+                 isPreferredColorSpace(rhs.format));
 
         if (doPreferHDR()) {
             ORDER_BY(isHDRFormat(lhs.format), isHDRFormat(rhs.format));
@@ -750,7 +758,7 @@ public:
 
 
 public:
-    void setPreferredColorSpace(const KisSurfaceColorSpace &preferredColorSpace) {
+    void setPreferredColorSpace(const KisSurfaceColorSpaceWrapper &preferredColorSpace) {
         m_preferredColorSpace = preferredColorSpace;
     }
 
@@ -782,7 +790,7 @@ public:
         return m_openGLESBlacklisted;
     }
 
-    KisSurfaceColorSpace preferredColorSpace() const {
+    KisSurfaceColorSpaceWrapper preferredColorSpace() const {
         return m_preferredColorSpace;
     }
 
@@ -793,8 +801,8 @@ public:
 private:
     bool isHDRFormat(const QSurfaceFormat &f) const {
 #ifdef HAVE_HDR
-        return f.colorSpace() == KisSurfaceColorSpace::bt2020PQColorSpace ||
-            f.colorSpace() == KisSurfaceColorSpace::scRGBColorSpace;
+        return f.colorSpace() == KisSurfaceColorSpaceWrapper::makeBt2020PQColorSpace() ||
+            f.colorSpace() == KisSurfaceColorSpaceWrapper::makeSCRGBColorSpace();
 #else
         Q_UNUSED(f);
         return false;
@@ -819,20 +827,21 @@ private:
 
     bool doPreferHDR() const {
 #ifdef HAVE_HDR
-        return m_preferredColorSpace == KisSurfaceColorSpace::bt2020PQColorSpace ||
-            m_preferredColorSpace == KisSurfaceColorSpace::scRGBColorSpace;
+        return m_preferredColorSpace == KisSurfaceColorSpaceWrapper::bt2020PQColorSpace ||
+            m_preferredColorSpace == KisSurfaceColorSpaceWrapper::scRGBColorSpace;
 #else
         return false;
 #endif
     }
 
-    bool isPreferredColorSpace(const KisSurfaceColorSpace cs) const {
-        return KisOpenGLModeProber::fuzzyCompareColorSpaces(m_preferredColorSpace, cs);
-        return false;
+    bool isPreferredColorSpace(const QSurfaceFormat & surfaceFormat) const {
+        return KisOpenGLModeProber::fuzzyCompareColorSpaces(
+            m_preferredColorSpace, 
+            KisSurfaceColorSpaceWrapper::fromQtColorSpace(surfaceFormat.colorSpace()));
     }
 
 private:
-    KisSurfaceColorSpace m_preferredColorSpace = KisSurfaceColorSpace::DefaultColorSpace;
+    KisSurfaceColorSpaceWrapper m_preferredColorSpace;
     KisOpenGL::OpenGLRenderer m_preferredRendererByQt = KisOpenGL::RendererDesktopGL;
     KisOpenGL::OpenGLRenderer m_preferredRendererByUser = KisOpenGL::RendererAuto;
     KisOpenGL::OpenGLRenderer m_preferredRendererByHDR = KisOpenGL::RendererAuto;
@@ -918,12 +927,12 @@ KisOpenGL::RendererConfig KisOpenGL::selectSurfaceConfig(KisOpenGL::OpenGLRender
 
 #ifdef HAVE_HDR
     compareOp.setPreferredColorSpace(
-        preferredRootSurfaceFormat == KisConfig::BT709_G22 ? KisSurfaceColorSpace::sRGBColorSpace :
-        preferredRootSurfaceFormat == KisConfig::BT709_G10 ? KisSurfaceColorSpace::scRGBColorSpace :
-        KisSurfaceColorSpace::bt2020PQColorSpace);
+        preferredRootSurfaceFormat == KisConfig::BT709_G22 ? KisSurfaceColorSpaceWrapper::sRGBColorSpace :
+        preferredRootSurfaceFormat == KisConfig::BT709_G10 ? KisSurfaceColorSpaceWrapper::scRGBColorSpace :
+        KisSurfaceColorSpaceWrapper::bt2020PQColorSpace);
 #else
     Q_UNUSED(preferredRootSurfaceFormat);
-    compareOp.setPreferredColorSpace(KisSurfaceColorSpace::sRGBColorSpace);
+    compareOp.setPreferredColorSpace(KisSurfaceColorSpaceWrapper::sRGBColorSpace);
 #endif
 
 #ifdef Q_OS_WIN
@@ -1009,11 +1018,7 @@ KisOpenGL::RendererConfig KisOpenGL::selectSurfaceConfig(KisOpenGL::OpenGLRender
 
     if (preferredRenderer != RendererNone) {
         Q_FOREACH (const KisOpenGL::RendererConfig &config, preferredConfigs) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
             dbgDetection() <<"Probing format..." << config.format.colorSpace() << config.rendererId();
-#else
-            dbgDetection() <<"Probing format..." << config.rendererId();
-#endif
             Info info = KisOpenGLModeProber::instance()->probeFormat(config);
 
             if (info && info->isSupportedVersion()) {
@@ -1042,12 +1047,8 @@ KisOpenGL::RendererConfig KisOpenGL::selectSurfaceConfig(KisOpenGL::OpenGLRender
 
         {
             const bool colorSpaceIsCorrect =
-        #if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
                     KisOpenGLModeProber::fuzzyCompareColorSpaces(compareOp.preferredColorSpace(),
-                                                                 resultConfig.format.colorSpace());
-#else
-                    true;
-#endif
+                                                                 KisSurfaceColorSpaceWrapper::fromQtColorSpace(resultConfig.format.colorSpace()));
 
             const bool rendererIsCorrect =
                     compareOp.preferredRendererByUser() == KisOpenGL::RendererAuto ||
@@ -1081,9 +1082,11 @@ void KisOpenGL::setDefaultSurfaceConfig(const KisOpenGL::RendererConfig &config)
     if (config.format.renderableType() == QSurfaceFormat::OpenGLES) {
         QCoreApplication::setAttribute(Qt::AA_UseOpenGLES, true);
 #ifdef Q_OS_WIN
-        // Force ANGLE to use Direct3D11. D3D9 doesn't support OpenGL ES 3 and WARP
-        //  might get weird crashes atm.
-        qputenv("QT_ANGLE_PLATFORM", KisOpenGLModeProber::angleRendererToString(config.angleRenderer).toLatin1());
+        if (!qEnvironmentVariableIsSet("QT_ANGLE_PLATFORM")) {
+            // Force ANGLE to use Direct3D11. D3D9 doesn't support OpenGL ES 3 and WARP
+            //  might get weird crashes atm.
+            qputenv("QT_ANGLE_PLATFORM", KisOpenGLModeProber::angleRendererToString(config.angleRenderer).toLatin1());
+        }
 #endif
     } else if (config.format.renderableType() == QSurfaceFormat::OpenGL) {
         QCoreApplication::setAttribute(Qt::AA_UseDesktopOpenGL, true);

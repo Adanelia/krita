@@ -6,7 +6,10 @@
  */
 #include "KisTagResourceModel.h"
 
-#include <QtSql>
+#include <QFont>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QSqlDatabase>
 #include <QMap>
 
 #include <KisResourceLocator.h>
@@ -683,6 +686,11 @@ QVariant KisAllTagResourceModel::headerData(int section, Qt::Orientation orienta
     }
 
     return {};
+}
+
+void KisAllTagResourceModel::closeQuery()
+{
+    d->query.clear();
 }
 
 bool KisAllTagResourceModel::resetQuery()

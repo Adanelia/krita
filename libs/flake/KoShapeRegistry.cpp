@@ -56,16 +56,12 @@ KoShapeRegistry::~KoShapeRegistry()
 void KoShapeRegistry::Private::init(KoShapeRegistry *q)
 {
     KoPluginLoader::PluginsConfig config;
-    config.whiteList = "FlakePlugins";
     config.blacklist = "FlakePluginsDisabled";
     config.group = "krita";
     KoPluginLoader::instance()->load(QString::fromLatin1("Krita/Flake"),
-                                     QString::fromLatin1("[X-Flake-PluginVersion] == 28"),
                                      config);
-    config.whiteList = "ShapePlugins";
     config.blacklist = "ShapePluginsDisabled";
     KoPluginLoader::instance()->load(QString::fromLatin1("Krita/Shape"),
-                                     QString::fromLatin1("[X-Flake-PluginVersion] == 28"),
                                      config);
 
     // Also add our hard-coded basic shapes

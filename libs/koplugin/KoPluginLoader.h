@@ -12,6 +12,8 @@
 
 #include "kritaplugin_export.h"
 
+class KPluginFactory;
+
 #ifndef Q_MOC_RUN
 /**
  * The pluginloader singleton is responsible for loading the plugins
@@ -60,7 +62,7 @@ public:
      * stating explicitly which plugins are wanted.
      */
     struct PluginsConfig {
-        PluginsConfig() : group(0), whiteList(0), blacklist(0) {}
+        PluginsConfig() : group(nullptr), blacklist(nullptr) {}
         /**
          * The properties are retrieved from the config using the following construct;
          * /code
@@ -68,14 +70,13 @@ public:
          * /endcode
          * For most cases you can pass the string "krita" into this variable.
          */
-        const char * group;
-        /// This contains the variable name for the list of plugins (by library name) the user wants to load
-        const char * whiteList;
+        const char * group {nullptr };
         /// This contains the variable name for the list of plugins (by library name) that will not be loaded
-        const char * blacklist;
-        /// A registry can state it wants to load a default set of plugins instead of all plugins
-        /// when the application starts the first time.  Append all such plugin (library) names to this list.
-        QStringList defaults;
+        const char * blacklist {nullptr};
+
+        inline bool isValid() const {
+            return group && blacklist;
+        }
     };
 
     ~KoPluginLoader() override;
@@ -87,21 +88,56 @@ public:
     static KoPluginLoader * instance();
 
     /**
-     * Load all plugins that conform to the versiontype and versionstring,
-     * for instance:
-     * KoPluginLoader::instance()->load("Krita/Flake", "([X-Flake-PluginVersion] == 28)");
+     * Load all plugins that conform to the versiontype, for instance:
+     * KoPluginLoader::instance()->load("Krita/Flake");
      * This method allows you to optionally limit the plugins that are loaded by version, but also
      * using a user configurable set of config options.
      * If you pass a PluginsConfig struct only those plugins are loaded that are specified in the
      * application config file.  New plugins found since last start will be automatically loaded.
      * @param serviceType The string used to identify the plugins.
-     * @param versionString A string match that allows you to check for a specific version
      * @param config when passing a valid config only the wanted plugins are actually loaded
      * #param owner if 0, the plugin will be deleted after instantiation, if not, the given qobject will own the plugin in its qobject hierarchy
      * @param cache: if true, the plugin will only be loaded once
      * @return a list of services (by library name) that were not know in the config
      */
-    void load(const QString & serviceType, const QString & versionString = QString(), const PluginsConfig &config = PluginsConfig(), QObject* owner = 0, bool cache = true);
+    void load(const QString & serviceType, const PluginsConfig &config = PluginsConfig(), QObject* owner = 0, bool cache = true);
+
+    /**
+     * Load a single plugin from the plugins directory
+     *
+     * One can pass a set of \p predicates that should be satisfied for the plugin to
+     * be selected. The loader will compare metadata of the plugin against those
+     * predicates and choose only the one satisfying **all** of them.
+     *
+     * If multiple plugins are found, then the one with highest version number is used.
+     * If two plugins with the same maximum version number exist, then a random one is
+     * selected.
+     *
+     * Usage:
+     *        \code{.cpp}
+     *
+     *        KPluginFactory *factory = KoPluginLoader::instance()->loadSinglePlugin(
+     *            std::make_pair("X-Krita-PlatformId", QGuiApplication::platformName()),
+     *            "Krita/PlatformPlugin");
+     *
+     *        if (factory) {
+     *            interface = factory->create<KisExtendedModifiersMapperPluginInterface>();
+     *        }
+     *
+     *        \endcode
+     *
+     */
+    KPluginFactory* loadSinglePlugin(const std::vector<std::pair<QString, QString>> &predicates, const QString & serviceType);
+
+    /*
+     * A conveniency override for \ref loadSinglePlugin() that accepts only one predicate
+     */
+    KPluginFactory* loadSinglePlugin(const std::pair<QString, QString> &predicates, const QString & serviceType);
+
+    /*
+     * A conveniency override for \ref loadSinglePlugin() that checks of Id of the plugin
+     */
+    KPluginFactory* loadSinglePlugin(const QString &id, const QString & serviceType);
 
 public:
     /// DO NOT USE! Use instance() instead

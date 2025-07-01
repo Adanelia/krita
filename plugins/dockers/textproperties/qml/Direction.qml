@@ -9,8 +9,9 @@ import QtQuick.Layouts 1.12
 import org.krita.flake.text 1.0
 
 TextPropertyBase {
-    propertyName: i18nc("@label:listbox", "Direction")
-    propertyType: TextPropertyBase.Mixed;
+    propertyTitle: i18nc("@label:listbox", "Direction");
+    propertyName: "direction";
+    propertyType: TextPropertyConfigModel.Mixed;
     toolTip: i18nc("@info:tooltip",
                    "Direction sets whether the text is left-to-right or right-to-left.");
     searchTerms: i18nc("comma separated search terms for the direction property, matching is case-insensitive",
@@ -19,13 +20,15 @@ TextPropertyBase {
     property int direction;
     property int unicodeBidi;
 
+
+
     onPropertiesUpdated: {
         blockSignals = true;
         direction = properties.direction;
         unicodeBidi = properties.unicodeBidi;
-        var set = properties.directionState !== KoSvgTextPropertiesModel.PropertyUnset;
         enabled = parentPropertyType === TextPropertyBase.Paragraph? !properties.spanSelection: properties.spanSelection;
-        visible = set;
+        propertyState = [properties.directionState];
+        setVisibleFromProperty();
         blockSignals = false;
     }
 
@@ -57,23 +60,32 @@ TextPropertyBase {
         }
 
         Label {
-            text: propertyName;
+            text: propertyTitle;
             elide: Text.ElideRight;
             Layout.fillWidth: true;
             font.italic: properties.directionState === KoSvgTextPropertiesModel.PropertyTriState;
+            palette: directionCmbPalette.palette;
         }
 
-        ComboBox {
+        SqueezedComboBox {
             id: directionCmb
             Layout.fillWidth: true;
+            Layout.preferredWidth: implicitWidth;
             model: [
-                {text: i18nc("@label:inlistbox", "Left to Right"), value: KoSvgText.DirectionLeftToRight},
-                {text: i18nc("@label:inlistbox", "Right to Left"), value: KoSvgText.DirectionRightToLeft}
+                {text: i18nc("@label:inlistbox", "Left to Right"), value: KoSvgText.DirectionLeftToRight, icon: "qrc:///16_light_format-text-direction-ltr.svg"},
+                {text: i18nc("@label:inlistbox", "Right to Left"), value: KoSvgText.DirectionRightToLeft, icon: "qrc:///16_light_format-text-direction-rtl.svg"}
             ]
             textRole: "text";
             valueRole: "value";
+            iconRole: "icon";
+            iconSize: 16;
             onActivated: direction = currentValue;
             wheelEnabled: true;
+            PaletteControl {
+                id: directionCmbPalette;
+                colorGroup: directionCmb.enabled? SystemPalette.Active: SystemPalette.Disabled;
+            }
+            palette: directionCmbPalette.palette;
         }
 
         RevertPropertyButton {
@@ -88,6 +100,7 @@ TextPropertyBase {
             Layout.fillWidth: true;
             visible: parentPropertyType === TextPropertyBase.Character;
             font.italic: properties.unicodeBidiState === KoSvgTextPropertiesModel.PropertyTriState;
+            palette: unicodeBidiCmbPalette.palette;
         }
 
         ComboBox {
@@ -106,6 +119,12 @@ TextPropertyBase {
             valueRole: "value";
             onActivated: unicodeBidi = currentValue;
             wheelEnabled: true;
+
+            PaletteControl {
+                id: unicodeBidiCmbPalette;
+                colorGroup: unicodeBidiCmb.enabled? SystemPalette.Active: SystemPalette.Disabled;
+            }
+            palette: unicodeBidiCmbPalette.palette;
         }
     }
 }

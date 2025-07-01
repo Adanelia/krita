@@ -9,8 +9,6 @@
 #include <QtGlobal>
 #include <QApplication>
 #include <QScreen>
-#include <QMutex>
-#include <QFont>
 #include <QThread>
 #include <QStringList>
 #include <QSettings>
@@ -44,8 +42,9 @@
 #include <kis_image_config.h>
 #include <KisCumulativeUndoData.h>
 
-#ifdef Q_OS_WIN
-#include "config_use_qt_tablet_windows.h"
+#if defined Q_OS_WIN && QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#  include <QtGui/private/qguiapplication_p.h>
+#  include <QtGui/qpa/qplatformintegration.h>
 #endif
 
 KisConfig::KisConfig(bool readOnly)
@@ -108,6 +107,30 @@ void KisConfig::logImportantSettings() const
     KisUsageLogger::writeSysInfo(QString("  Use Zip64: %1").arg(useZip64() ? "true" : "false"));
 
     KisUsageLogger::writeSysInfo("\n");
+
+    // Tablet API information
+#if defined Q_OS_WIN && QT_VERSION > QT_VERSION_CHECK(6, 0, 0)
+{
+    auto tabletAPIName = [] (bool useWinTab) {
+        return useWinTab ? "WinTab" : "WinInk";
+    };
+
+    QString actualTabletProtocol = "<unknown>";
+
+    using QWindowsApplication = QNativeInterface::Private::QWindowsApplication;
+    if (auto nativeWindowsApp = dynamic_cast<QWindowsApplication *>(QGuiApplicationPrivate::platformIntegration())) {
+        actualTabletProtocol = tabletAPIName(nativeWindowsApp->isWinTabEnabled());
+    } else {
+        KisUsageLogger::log("WARNING: Failed to fetch WinTab protocol status: QWindowsApplication is not available");
+    }
+
+    KisUsageLogger::writeSysInfo("Tablet API Information\n");
+    KisUsageLogger::writeSysInfo(QString("  User-selected tablet API: %1").arg(tabletAPIName(!useWin8PointerInput())));
+    KisUsageLogger::writeSysInfo(QString("  Actually used tablet API: %1").arg(actualTabletProtocol));
+    KisUsageLogger::writeSysInfo("\n");
+}
+#endif
+
 }
 
 bool KisConfig::disableTouchOnCanvas(bool defaultValue) const
@@ -1361,14 +1384,10 @@ void KisConfig::setPressureTabletCurve(const QString& curveString) const
 bool KisConfig::useWin8PointerInput(bool defaultValue) const
 {
 #ifdef Q_OS_WIN
-#ifdef USE_QT_TABLET_WINDOWS
     const QString configPath = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
     QSettings kritarc(configPath + QStringLiteral("/kritadisplayrc"), QSettings::IniFormat);
 
     return useWin8PointerInputNoApp(&kritarc, defaultValue);
-#else
-    return (defaultValue ? false : m_cfg.readEntry("useWin8PointerInput", false));
-#endif
 #else
     Q_UNUSED(defaultValue);
     return false;
@@ -1382,15 +1401,9 @@ void KisConfig::setUseWin8PointerInput(bool value)
     // Special handling: Only set value if changed
     // I don't want it to be set if the user hasn't touched it
     if (useWin8PointerInput() != value) {
-
-#ifdef USE_QT_TABLET_WINDOWS
         const QString configPath = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
         QSettings kritarc(configPath + QStringLiteral("/kritadisplayrc"), QSettings::IniFormat);
         setUseWin8PointerInputNoApp(&kritarc, value);
-#else
-        m_cfg.writeEntry("useWin8PointerInput", value);
-#endif
-
     }
 
 #else
@@ -1894,14 +1907,34 @@ void KisConfig::setLineSmoothingType(int value)
     m_cfg.writeEntry("LineSmoothingType", value);
 }
 
-qreal KisConfig::lineSmoothingDistance(bool defaultValue) const
+qreal KisConfig::lineSmoothingDistanceMin(bool defaultValue) const
 {
-    return (defaultValue ? 50.0 : m_cfg.readEntry("LineSmoothingDistance", 50.0));
+    return (defaultValue ? 50.0 : m_cfg.readEntry("LineSmoothingDistanceMin", 50.0));
 }
 
-void KisConfig::setLineSmoothingDistance(qreal value)
+void KisConfig::setLineSmoothingDistanceMin(qreal value)
 {
-    m_cfg.writeEntry("LineSmoothingDistance", value);
+    m_cfg.writeEntry("LineSmoothingDistanceMin", value);
+}
+
+qreal KisConfig::lineSmoothingDistanceMax(bool defaultValue) const
+{
+    return (defaultValue ? 50.0 : m_cfg.readEntry("LineSmoothingDistanceMax", 50.0));
+}
+
+void KisConfig::setLineSmoothingDistanceMax(qreal value)
+{
+    m_cfg.writeEntry("LineSmoothingDistanceMax", value);
+}
+
+bool KisConfig::lineSmoothingDistanceKeepAspectRatio(bool defaultValue) const
+{
+    return (defaultValue ? true : m_cfg.readEntry("LineSmoothingDistanceKeepAspectRatio", true));
+}
+
+void KisConfig::setLineSmoothingDistanceKeepAspectRatio(bool value)
+{
+    m_cfg.writeEntry("LineSmoothingDistanceKeepAspectRatio", value);
 }
 
 qreal KisConfig::lineSmoothingTailAggressiveness(bool defaultValue) const
@@ -2260,6 +2293,16 @@ bool KisConfig::adaptivePlaybackRange(bool defaultValue) const
 void KisConfig::setAdaptivePlaybackRange(bool value)
 {
     m_cfg.writeEntry("adaptivePlaybackRange", value);
+}
+
+bool KisConfig::autoZoomTimelineToPlaybackRange(bool defaultValue) const
+{
+    return (defaultValue ? true : m_cfg.readEntry("autoZoomTimelineToPlaybackRange", true));
+}
+
+void KisConfig::setAutoZoomTimelineToPlaybackRange(bool value)
+{
+    m_cfg.writeEntry("autoZoomTimelineToPlaybackRange", value);
 }
 
 QString KisConfig::ffmpegLocation(bool defaultValue) const {

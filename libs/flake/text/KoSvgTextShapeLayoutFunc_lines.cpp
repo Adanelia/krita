@@ -28,24 +28,15 @@ namespace KoSvgTextShapeLayoutFunc
  */
 void calculateLineHeight(CharacterResult cr, double &ascent, double &descent, bool isHorizontal, bool compare)
 {
-    double offset = isHorizontal? cr.baselineOffset.y(): cr.baselineOffset.x();
-    double offsetAsc = 0.0;
-    double offsetDsc = 0.0;
-    if (cr.scaledAscent <= 0) {
-        offsetAsc = cr.scaledAscent - cr.scaledHalfLeading;
-        offsetDsc = cr.scaledDescent + cr.scaledHalfLeading;
-    } else {
-        offsetAsc = cr.scaledAscent + cr.scaledHalfLeading;
-        offsetDsc = cr.scaledDescent - cr.scaledHalfLeading;
-    }
-    offsetAsc += offset;
-    offsetDsc += offset;
+    QRectF lineHeightBox = cr.lineHeightBox().translated(cr.totalBaselineOffset());
+    double offsetAsc = isHorizontal? lineHeightBox.top(): lineHeightBox.right();
+    double offsetDsc = isHorizontal? lineHeightBox.bottom(): lineHeightBox.left();
 
     if (!compare) {
         ascent = offsetAsc;
         descent = offsetDsc;
     } else {
-        if (cr.scaledAscent <= 0) {
+        if (isHorizontal) {
             ascent = qMin(offsetAsc, ascent);
             descent = qMax(offsetDsc, descent);
         } else {
@@ -73,13 +64,12 @@ void addWordToLine(QVector<CharacterResult> &result,
 
     Q_FOREACH (const int j, wordIndices) {
         CharacterResult cr = result.at(j);
-        if (currentChunk.boundingBox.isEmpty() && j == wordIndices.first()) {
+        if (currentLine.isEmpty() && j == wordIndices.first()) {
             if (result.at(j).lineStart == LineEdgeBehaviour::Collapse) {
-                result[j].advance = QPointF();
                 if (isHorizontal) {
-                    result[j].boundingBox.setWidth(0);
+                    result[j].scaleCharacterResult(0.0, 1.0);
                 } else {
-                    result[j].boundingBox.setHeight(0);
+                    result[j].scaleCharacterResult(1.0, 0.0);
                 }
                 result[j].hidden = true;
                 continue;
@@ -89,18 +79,16 @@ void addWordToLine(QVector<CharacterResult> &result,
                 currentPos -= cr.advance;
                 cr.isHanging = true;
             }
-
-            // Ensure that the first non-collapsed result will always set the line-top and bottom.
-            calculateLineHeight(cr, currentLine.actualLineTop, currentLine.actualLineBottom, isHorizontal, false);
-        } else {
-            calculateLineHeight(cr, currentLine.actualLineTop, currentLine.actualLineBottom, isHorizontal, true);
         }
+        calculateLineHeight(cr, currentLine.actualLineTop, currentLine.actualLineBottom, isHorizontal, !cr.anchored_chunk);
+
         cr.cssPosition = currentPos;
+        cr.calculateAndApplyTabsize(currentPos, isHorizontal, KoSvgText::ResolutionHandler());
         currentPos += cr.advance;
         lineAdvance = currentPos;
 
         result[j] = cr;
-        currentChunk.boundingBox |= cr.boundingBox.translated(cr.cssPosition + cr.baselineOffset);
+        currentChunk.boundingBox |= cr.layoutBox().translated(cr.cssPosition + cr.totalBaselineOffset());
     }
     currentPos = lineAdvance;
     currentChunk.chunkIndices += wordIndices;
@@ -115,12 +103,14 @@ void addWordToLine(QVector<CharacterResult> &result,
 static QPointF lineHeightOffset(KoSvgText::WritingMode writingMode,
                                 QVector<CharacterResult> &result,
                                 LineBox &currentLine,
-                                bool firstLine)
+                                const bool firstLine,
+                                const KoSvgText::ResolutionHandler resHandler)
 {
     QPointF lineTop;
     QPointF lineBottom;
     QPointF correctionOffset; ///< This is for determining the difference between
                               ///< a predicted line-height (for text-in-shape) and the actual line-height.
+                              ///< Note: this is required to be positive.
 
     if (currentLine.chunks.isEmpty()) {
         return QPointF();
@@ -143,19 +133,19 @@ static QPointF lineHeightOffset(KoSvgText::WritingMode writingMode,
         }
     }
 
-    qreal expectedLineTop = currentLine.actualLineTop > 0? qMax(currentLine.expectedLineTop, currentLine.actualLineTop):
-                                                       qMin(currentLine.expectedLineTop, currentLine.actualLineTop);
-
+    // We do qmin/qmax here so that later, the correction offset will not go below either value.
+    const qreal expectedLineTop = writingMode == KoSvgText::HorizontalTB? qMin(currentLine.expectedLineTop, currentLine.actualLineTop):
+                                                                          qMax(currentLine.expectedLineTop, currentLine.actualLineTop);
     if (writingMode == KoSvgText::HorizontalTB) {
         currentLine.baselineTop = QPointF(0, currentLine.actualLineTop);
         currentLine.baselineBottom = QPointF(0, currentLine.actualLineBottom);
-        correctionOffset = QPointF(0, expectedLineTop) - currentLine.baselineTop;
+        correctionOffset = QPointF(0, -expectedLineTop) + currentLine.baselineTop;
         lineTop = -currentLine.baselineTop;
         lineBottom = currentLine.baselineBottom;
     } else if (writingMode == KoSvgText::VerticalLR) {
         currentLine.baselineTop = QPointF(currentLine.actualLineTop, 0);
         currentLine.baselineBottom = QPointF(currentLine.actualLineBottom, 0);
-        correctionOffset = QPointF(expectedLineTop, 0) - currentLine.baselineTop;
+        correctionOffset = QPointF(-expectedLineTop, 0) + currentLine.baselineTop;
         // Note: while Vertical LR goes left-to-right in its lines, its lines themselves are
         // oriented with the top pointed in the positive x direction.
         lineBottom = currentLine.baselineTop;
@@ -163,36 +153,40 @@ static QPointF lineHeightOffset(KoSvgText::WritingMode writingMode,
     } else {
         currentLine.baselineTop = QPointF(currentLine.actualLineTop, 0);
         currentLine.baselineBottom = QPointF(currentLine.actualLineBottom, 0);
-        correctionOffset = QPointF(-expectedLineTop, 0) + currentLine.baselineTop;
+        correctionOffset = QPointF(expectedLineTop, 0) - currentLine.baselineTop;
         lineTop = -currentLine.baselineTop;
         lineBottom = currentLine.baselineBottom;
     }
     bool returnDescent = firstLine;
-    QPointF offset = lineTop + lineBottom;
+    QPointF offset = resHandler.adjust(lineTop + lineBottom);
+    if (resHandler.roundToPixelHorizontal || resHandler.roundToPixelVertical) {
+        lineTop = offset - resHandler.adjust(lineBottom);
+        correctionOffset = resHandler.adjust(correctionOffset);
+    }
 
     if (!returnDescent) {
-        for (LineChunk &chunk : currentLine.chunks) {
-            Q_FOREACH (int j, chunk.chunkIndices) {
+        for (auto chunk = currentLine.chunks.begin(); chunk != currentLine.chunks.end(); chunk++) {
+            Q_FOREACH (int j, chunk->chunkIndices) {
                 result[j].cssPosition += lineTop;
-                result[j].cssPosition += result[j].baselineOffset;
+                result[j].cssPosition += result[j].totalBaselineOffset();
                 result[j].finalPosition = result.at(j).cssPosition;
             }
-            chunk.length.translate(lineTop);
-            chunk.boundingBox.translate(lineTop);
+            chunk->length.translate(lineTop);
+            chunk->boundingBox.translate(lineTop);
         }
     } else {
         offset = lineBottom - correctionOffset;
-        for (LineChunk &chunk : currentLine.chunks) {
-            Q_FOREACH (int j, chunk.chunkIndices) {
+        for (auto chunk = currentLine.chunks.begin(); chunk != currentLine.chunks.end(); chunk++) {
+            Q_FOREACH (int j, chunk->chunkIndices) {
                 result[j].cssPosition -= correctionOffset;
-                result[j].cssPosition +=  result[j].baselineOffset;
+                result[j].cssPosition = result[j].cssPosition + result[j].totalBaselineOffset();
                 result[j].finalPosition = result.at(j).cssPosition;
             }
-            chunk.length.translate(-correctionOffset);
-            chunk.boundingBox.translate(-correctionOffset);
+            chunk->length.translate(-correctionOffset);
+            chunk->boundingBox.translate(-correctionOffset);
         }
     }
-    return offset;
+    return resHandler.adjust(offset);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -213,9 +207,9 @@ handleCollapseAndHang(QVector<CharacterResult> &result, LineChunk &chunk, bool l
                 // still be possible to track it by cursor movement.
                 result[lastIndex].advance = QPointF();
                 if (isHorizontal) {
-                    result[lastIndex].boundingBox.setWidth(0);
+                    result[lastIndex].inkBoundingBox.setWidth(0);
                 } else {
-                    result[lastIndex].boundingBox.setHeight(0);
+                    result[lastIndex].inkBoundingBox.setHeight(0);
                 }
             } else if (result.at(lastIndex).lineEnd == LineEdgeBehaviour::ConditionallyHang) {
                 if (ltr) {
@@ -252,16 +246,16 @@ handleCollapseAndHang(QVector<CharacterResult> &result, LineChunk &chunk, bool l
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 static void applyInlineSizeAnchoring(QVector<CharacterResult> &result,
-                                     LineChunk chunk,
-                                     KoSvgText::TextAnchor anchor,
-                                     QPointF anchorPoint,
-                                     bool ltr,
-                                     bool isHorizontal,
-                                     QPointF textIndent)
+                                     LineChunk &chunk,
+                                     const KoSvgText::TextAnchor anchor,
+                                     const QPointF anchorPoint,
+                                     const bool ltr,
+                                     const bool isHorizontal,
+                                     const QPointF textIndent,
+                                     const KoSvgText::ResolutionHandler &resHandler)
 {
-    QVector<int> lineIndices = chunk.chunkIndices;
-    QPointF startPos = anchorPoint;
-    qreal shift = isHorizontal ? startPos.x() : startPos.y();
+    const QVector<int> lineIndices = chunk.chunkIndices;
+    qreal shift = isHorizontal ? anchorPoint.x() : anchorPoint.y();
 
     qreal a = 0;
     qreal b = 0;
@@ -313,11 +307,12 @@ static void applyInlineSizeAnchoring(QVector<CharacterResult> &result,
         shift -= ((a + b) * 0.5);
     }
 
-    QPointF shiftP = isHorizontal ? QPointF(shift, 0) : QPointF(0, shift);
+    QPointF shiftP = resHandler.adjust(isHorizontal ? QPointF(shift, 0) : QPointF(0, shift));
     Q_FOREACH (int j, lineIndices) {
-        result[j].cssPosition += shiftP;
+        result[j].cssPosition = result[j].cssPosition+shiftP;
         result[j].finalPosition = result.at(j).cssPosition;
     }
+    chunk.boundingBox.translate(shiftP);
 }
 
 /// Finalizing the line consists of several steps, like hang/collapse, anchoring
@@ -327,31 +322,32 @@ void finalizeLine(QVector<CharacterResult> &result,
                   QPointF &currentPos,
                   LineBox &currentLine,
                   QPointF &lineOffset,
-                  KoSvgText::TextAnchor anchor,
-                  KoSvgText::WritingMode writingMode,
-                  bool ltr,
-                  bool inlineSize,
-                  bool textInShape)
+                  const KoSvgText::TextAnchor anchor,
+                  const KoSvgText::WritingMode writingMode,
+                  const bool ltr,
+                  const bool inlineSize,
+                  const bool textInShape,
+                  const KoSvgText::ResolutionHandler &resHandler)
 {
     bool isHorizontal = writingMode == KoSvgText::HorizontalTB;
 
     bool firstLine = textInShape? true: currentLine.firstLine;
 
-    Q_FOREACH (LineChunk currentChunk, currentLine.chunks) {
+    for (auto currentChunk = currentLine.chunks.begin(); currentChunk != currentLine.chunks.end(); currentChunk++) {
         QMap<int, int> visualToLogical;
-        Q_FOREACH (int j, currentChunk.chunkIndices) {
+        Q_FOREACH (int j, currentChunk->chunkIndices) {
             visualToLogical.insert(result.at(j).visualIndex, j);
         }
         currentPos = lineOffset;
 
-        handleCollapseAndHang(result, currentChunk, ltr, isHorizontal);
+        handleCollapseAndHang(result, *currentChunk, ltr, isHorizontal);
 
         QPointF justifyOffset;
         QVector<int> before;
         QVector<int> after;
 
         if (currentLine.justifyLine) {
-            double hangingGlyphLength = isHorizontal? currentChunk.conditionalHangEnd.x(): currentChunk.conditionalHangEnd.y();
+            double hangingGlyphLength = isHorizontal? currentChunk->conditionalHangEnd.x(): currentChunk->conditionalHangEnd.y();
             QPointF advanceLength; ///< Because we may have collapsed the last glyph, we'll need to recalculate the total advance;
             bool first = true;
             Q_FOREACH (int j, visualToLogical.values()) {
@@ -382,11 +378,11 @@ void finalizeLine(QVector<CharacterResult> &result,
             int justificationCount = before.size()+after.size();
             if (justificationCount > 0) {
                 if (isHorizontal) {
-                    double val = currentChunk.length.length() + hangingGlyphLength - advanceLength.x();
+                    double val = currentChunk->length.length() + hangingGlyphLength - advanceLength.x();
                     val = val / justificationCount;
                     justifyOffset = QPointF(val, 0);
                 } else {
-                    double val = currentChunk.length.length() + hangingGlyphLength - advanceLength.y();
+                    double val = currentChunk->length.length() + hangingGlyphLength - advanceLength.y();
                     val = val / justificationCount;
                     justifyOffset = QPointF(0, val);
                 }
@@ -419,18 +415,21 @@ void finalizeLine(QVector<CharacterResult> &result,
         }
 
         if (inlineSize) {
-            QPointF anchorPoint = currentChunk.length.p1();
+            QPointF anchorPoint = currentChunk->length.p1();
             if (textInShape) {
                 if (anchor == KoSvgText::AnchorMiddle) {
-                    anchorPoint = currentChunk.length.center();
+                    anchorPoint = currentChunk->length.center();
                 } else if (anchor == KoSvgText::AnchorEnd) {
-                    anchorPoint = currentChunk.length.p2();
+                    anchorPoint = currentChunk->length.p2();
                 }
             }
-            applyInlineSizeAnchoring(result, currentChunk, anchor, anchorPoint, ltr, isHorizontal, currentLine.textIndent);
+            applyInlineSizeAnchoring(result, *currentChunk, anchor, anchorPoint, ltr, isHorizontal, currentLine.textIndent, resHandler);
+        } else {
+            // this adds a length for preformated text, only useful for debug.
+            currentChunk->length.setLength(isHorizontal? currentChunk->boundingBox.width(): currentChunk->boundingBox.height());
         }
     }
-    lineOffset += lineHeightOffset(writingMode, result, currentLine, firstLine);
+    lineOffset += lineHeightOffset(writingMode, result, currentLine, firstLine, resHandler);
     currentPos = lineOffset;
 }
 
@@ -438,7 +437,8 @@ void finalizeLine(QVector<CharacterResult> &result,
 QVector<LineBox> breakLines(const KoSvgTextProperties &properties,
                             const QMap<int, int> &logicalToVisual,
                             QVector<CharacterResult> &result,
-                            QPointF startPos)
+                            QPointF startPos,
+                            const KoSvgText::ResolutionHandler &resHandler)
 {
     KoSvgText::WritingMode writingMode = KoSvgText::WritingMode(properties.propertyOrDefault(KoSvgTextProperties::WritingModeId).toInt());
     KoSvgText::Direction direction = KoSvgText::Direction(properties.propertyOrDefault(KoSvgTextProperties::DirectionId).toInt());
@@ -459,14 +459,14 @@ QVector<LineBox> breakLines(const KoSvgTextProperties &properties,
         qreal textIdentValue = textIndentInfo.length.unit == KoSvgText::CssLengthPercentage::Percentage?
                     textIndentInfo.length.value * inlineSize.customValue: textIndentInfo.length.value;
         if (isHorizontal) {
-            textIndent = QPointF(textIdentValue, 0);
+            textIndent = resHandler.adjust(QPointF(textIdentValue, 0));
             endPos = ltr ? QPointF(startPos.x() + inlineSize.customValue, 0) : QPointF(startPos.x() - inlineSize.customValue, 0);
         } else {
-            textIndent = QPointF(0, textIdentValue);
+            textIndent = resHandler.adjust(QPointF(0, textIdentValue));
             endPos = ltr ? QPointF(0, startPos.y() + inlineSize.customValue) : QPointF(0, startPos.y() - inlineSize.customValue);
         }
     }
-    LineBox currentLine(startPos, endPos);
+    LineBox currentLine(startPos, endPos, resHandler);
     currentLine.firstLine = true;
 
     QVector<int> wordIndices; ///< 'word' in this case meaning characters
@@ -485,6 +485,7 @@ QVector<LineBox> breakLines(const KoSvgTextProperties &properties,
     QListIterator<int> it(logicalToVisual.keys());
     while (it.hasNext()) {
         int index = it.next();
+        result[index].calculateAndApplyTabsize(wordAdvance + currentPos, isHorizontal, resHandler);
         CharacterResult charResult = result.at(index);
         if (!charResult.addressable) {
             continue;
@@ -531,7 +532,8 @@ QVector<LineBox> breakLines(const KoSvgTextProperties &properties,
                              writingMode,
                              ltr,
                              !inlineSize.isAuto,
-                             false);
+                             false,
+                             resHandler);
                 lineBoxes.append(currentLine);
                 currentLine.clearAndAdjust(isHorizontal, lineOffset, textIndentInfo.hanging? textIndent: QPointF());
                 if (!inlineSize.isAuto) {
@@ -549,6 +551,7 @@ QVector<LineBox> breakLines(const KoSvgTextProperties &properties,
                     QVector<int> partialWord;
                     currentLine.firstLine = firstLine;
                     Q_FOREACH (const int i, wordIndices) {
+                        result[i].calculateAndApplyTabsize(wordAdvance + currentPos, isHorizontal, resHandler);
                         wordAdvance += result.at(i).advance;
                         wordLength = isHorizontal ? wordAdvance.x() : wordAdvance.y();
                         if (wordLength <= inlineSize.customValue) {
@@ -564,12 +567,14 @@ QVector<LineBox> breakLines(const KoSvgTextProperties &properties,
                                          writingMode,
                                          ltr,
                                          !inlineSize.isAuto,
-                                         false);
+                                         false,
+                                         resHandler);
                             lineBoxes.append(currentLine);
                             currentLine.clearAndAdjust(isHorizontal, lineOffset, textIndentInfo.hanging? textIndent: QPointF());
                             if (!inlineSize.isAuto) {
                                 currentPos += currentLine.textIndent;
                             }
+                            result[i].calculateAndApplyTabsize(wordAdvance + currentPos, isHorizontal, resHandler);
                             wordAdvance = result.at(i).advance;
                             partialWord.append(i);
                         }
@@ -589,7 +594,8 @@ QVector<LineBox> breakLines(const KoSvgTextProperties &properties,
                          writingMode,
                          ltr,
                          !inlineSize.isAuto,
-                         false);
+                         false,
+                         resHandler);
             lineBoxes.append(currentLine);
             bool indentLine = textIndentInfo.hanging? false: textIndentInfo.eachLine;
             currentLine.clearAndAdjust(isHorizontal, lineOffset, indentLine? textIndent: QPointF());
@@ -610,7 +616,8 @@ QVector<LineBox> breakLines(const KoSvgTextProperties &properties,
                          writingMode,
                          ltr,
                          !inlineSize.isAuto,
-                         false);
+                         false,
+                         resHandler);
             lineBoxes.append(currentLine);
         }
     }

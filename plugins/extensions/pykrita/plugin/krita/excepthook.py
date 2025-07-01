@@ -11,11 +11,15 @@ Things to extend: Clicking on the filename should open an editor.
 Things to consider: Mail exceptions, copy to clipboard or send to bug tracker.
 """
 import sys
-import cgitb
+import traceback
 import atexit
 
-from PyQt5.QtCore import pyqtSlot, Qt
-from PyQt5.QtWidgets import QApplication, QDialog
+try:
+    from PyQt6.QtCore import pyqtSlot, Qt
+    from PyQt6.QtWidgets import QApplication, QDialog
+except:
+    from PyQt5.QtCore import pyqtSlot, Qt
+    from PyQt5.QtWidgets import QApplication, QDialog
 
 from excepthook_ui import Ui_ExceptHookDialog
 
@@ -26,7 +30,7 @@ def on_error(exc_type, exc_obj, exc_tb):
     """
     dlg = ExceptHookDialog(exc_type, exc_obj, exc_tb)
     dlg.show()
-    dlg.exec_()
+    dlg.exec()
 
 
 def show_current_error(title=None):
@@ -36,7 +40,7 @@ def show_current_error(title=None):
     """
     dlg = ExceptHookDialog(sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2], title)
     dlg.show()
-    dlg.exec_()
+    dlg.exec()
 
 
 def install():
@@ -61,7 +65,7 @@ class ExceptHookDialog(QDialog):
             self.setWindowTitle(self.windowTitle() + ": " + title)
         msg = "%s: %s" % (exc_type.__name__, exc_obj)
         self.ui.exceptionLabel.setText(msg)
-        html = cgitb.text((exc_type, exc_obj, exc_tb))
+        html = "\n".join(traceback.format_exception(exc_type, exc_obj, exc_tb))
         self.ui.tracebackBrowser.setText(html)
         self.resize(650, 350)  # give enough space to see the backtrace better
 

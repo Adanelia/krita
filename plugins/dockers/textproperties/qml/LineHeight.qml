@@ -3,46 +3,74 @@
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
  */
-import QtQuick 2.0
-import QtQuick.Controls 2.0
+import QtQuick 2.15
+import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.12
 import org.krita.flake.text 1.0
+import org.krita.components 1.0
 
 TextPropertyBase {
-    propertyName: i18nc("@label", "Line Height");
-    propertyType: TextPropertyBase.Character;
+    propertyTitle: i18nc("@label", "Line Height");
+    propertyName: "line-height";
+    propertyType: TextPropertyConfigModel.Character;
     toolTip: i18nc("@info:tooltip",
                    "Line Height controls the line height used for the range of text.");
     searchTerms: i18nc("comma separated search terms for the line-height property, matching is case-insensitive",
                        "line-height, line-spacing");
     property alias isNormal: lineHeightNormalCbx.checked;
-    property alias lineHeight: lineHeightSpn.value;
-    property int lineHeightUnit: LineHeightModel.Lines;
+    property alias lineHeight: converter.dataValue;
+    property alias lineHeightUnit: converter.dataUnit;
+    property var unitMap: [
+        { user: CssQmlUnitConverter.Pt, data: LineHeightModel.Absolute},
+        { user: CssQmlUnitConverter.Em, data: LineHeightModel.Em},
+        { user: CssQmlUnitConverter.Ex, data: LineHeightModel.Ex},
+        { user: CssQmlUnitConverter.Cap, data: LineHeightModel.Cap},
+        { user: CssQmlUnitConverter.Ch, data: LineHeightModel.Ch},
+        { user: CssQmlUnitConverter.Ic, data: LineHeightModel.Ic},
+        { user: CssQmlUnitConverter.Lh, data: LineHeightModel.Lh},
+        { user: CssQmlUnitConverter.Percentage, data: LineHeightModel.Percentage},
+        { user: CssQmlUnitConverter.Lines, data: LineHeightModel.Lines},
+    ]
+
+    CssQmlUnitConverter {
+        id: converter;
+        dpi: dpi;
+        dataMultiplier: lineHeightSpn.multiplier;
+
+        onUserValueChanged: lineHeightSpn.value = userValue;
+        onUserUnitChanged: lineHeightUnitCmb.currentIndex = lineHeightUnitCmb.indexOfValue(userUnit);
+    }
 
     onPropertiesUpdated: {
         blockSignals = true;
         isNormal = properties.lineHeight.isNormal;
-        lineHeight = properties.lineHeight.value * lineHeightSpn.multiplier;
-        lineHeightUnit = properties.lineHeight.unit;
-        visible = properties.lineHeightState !== KoSvgTextPropertiesModel.PropertyUnset;
+        converter.dpi = canvasDPI;
+        converter.setFontMetricsFromTextPropertiesModel(properties, false, true);
+        converter.percentageReference = properties.resolvedFontSize(false);
+        converter.setDataValueAndUnit(properties.lineHeight.value, properties.lineHeight.unit);
+
+        propertyState = [properties.lineHeightState];
+        setVisibleFromProperty();
         blockSignals = false;
     }
 
     onLineHeightUnitChanged: {
-        lineHeightUnitCmb.currentIndex = lineHeightUnitCmb.indexOfValue(lineHeightUnit)
-        if (!blockSignals) {
+        if (!blockSignals && !isNormal) {
             properties.lineHeight.unit = lineHeightUnit
         }
     }
     onIsNormalChanged: {
         if (!blockSignals) {
+            if (isNormal) {
+                converter.setFromNormalLineHeight();
+            }
             properties.lineHeight.isNormal = isNormal;
         }
     }
 
     onLineHeightChanged: {
-        if (!blockSignals) {
-            properties.lineHeight.value = lineHeight / lineHeightSpn.multiplier;
+        if (!blockSignals && !isNormal) {
+            properties.lineHeight.value = lineHeight;
         }
     }
 
@@ -50,6 +78,8 @@ TextPropertyBase {
 
     Component.onCompleted: {
         mainWindow.connectAutoEnabler(lineHeightSpnArea);
+        converter.setDataUnitMap(unitMap);
+        converter.setDataValueAndUnit(0, 0);
     }
 
     GridLayout {
@@ -63,7 +93,7 @@ TextPropertyBase {
         }
 
         Label {
-            text: propertyName;
+            text: propertyTitle;
             elide: Text.ElideRight;
             Layout.fillWidth: true;
             font.italic: properties.lineHeightState === KoSvgTextPropertiesModel.PropertyTriState;
@@ -81,61 +111,53 @@ TextPropertyBase {
             width: firstColumnWidth;
             height: 1;
         }
-        MouseArea {
-            id: lineHeightSpnArea;
-            function autoEnable() {
-                lineHeightNormalCbx.checked = false;
-            }
-            Layout.fillWidth: true;
+        RowLayout {
             Layout.fillHeight: true;
-            DoubleSpinBox {
-                id: lineHeightSpn
-                width: parent.width;
-                enabled: !lineHeightNormalCbx.checked;
-                from: 0;
-                to: 999 * multiplier;
+            Layout.fillWidth: true;
+            Layout.columnSpan: 2;
+            MouseArea {
+                id: lineHeightSpnArea;
+                function autoEnable() {
+                    lineHeightNormalCbx.checked = false;
+                }
+                Layout.fillWidth: true;
+                Layout.fillHeight: true;
+                DoubleSpinBox {
+                    id: lineHeightSpn
+                    width: parent.width;
+                    enabled: !lineHeightNormalCbx.checked;
+                    from: 0;
+                    to: 999 * multiplier;
+
+                    onValueChanged:if (enabled)  converter.userValue = value;
+                    palette: lineHeightPalette.palette;
+                }
             }
-        }
 
-        ComboBox {
-            id: lineHeightUnitCmb;
-            property QtObject spinBoxControl: lineHeightSpn;
-            model: [
-                { text: i18nc("@label:inlistbox", "Pt"), value: LineHeightModel.Absolute},
-                { text: i18nc("@label:inlistbox", "Em"), value: LineHeightModel.Em},
-                { text: i18nc("@label:inlistbox", "Ex"), value: LineHeightModel.Ex},
-                { text: i18nc("@label:inlistbox", "%"), value: LineHeightModel.Percentage},
-                { text: i18nc("@label:inlistbox", "Lines"), value: LineHeightModel.Lines},
-            ]
-            textRole: "text";
-            valueRole: "value";
-            enabled: !lineHeightNormalCbx.checked;
-            wheelEnabled: true;
+            SqueezedComboBox {
+                id: lineHeightUnitCmb;
+                model: converter.userUnitModel;
+                textRole: "description";
+                valueRole: "value";
+                displayText: converter.symbol;
+                enabled: !lineHeightNormalCbx.checked;
 
-            onActivated: {
-                var currentValueInPt = 0;
-                if (lineHeightUnit === LineHeightModel.Absolute) {
-                    currentValueInPt = spinBoxControl.value;
-                } else if (lineHeightUnit === LineHeightModel.Ex) {
-                    currentValueInPt = spinBoxControl.value * properties.resolvedXHeight(false);
-                } else if (lineHeightUnit === LineHeightModel.Percentage) {
-                    currentValueInPt = (spinBoxControl.value / 100) * properties.resolvedFontSize(false);
-                } else { // EM, Lines
-                    currentValueInPt = spinBoxControl.value * properties.resolvedFontSize(false);
+                TextMetrics {
+                    id: symbolWidth;
+                    font: lineHeightUnitCmb.font;
+                    text: lineHeightUnitCmb.displayText;
                 }
+                Layout.preferredWidth: symbolWidth.width+leftPadding+rightPadding+spacing+indicator.width;
+                Layout.maximumWidth: implicitWidth;
 
-                var newValue = 0;
-                if (currentValue === LineHeightModel.Absolute) {
-                    newValue = currentValueInPt
-                } else if (currentValue === LineHeightModel.Ex) {
-                    newValue = currentValueInPt / properties.resolvedXHeight(false);
-                } else if (currentValue === LineHeightModel.Percentage) {
-                    newValue = (currentValueInPt / properties.resolvedFontSize(false)) * 100;
-                } else { // Em, Lines
-                    newValue = currentValueInPt / properties.resolvedFontSize(false);
+                PaletteControl {
+                    id: lineHeightPalette;
+                    colorGroup: lineHeightUnitCmb.enabled? SystemPalette.Active: SystemPalette.Disabled;
                 }
-                lineHeightUnit = currentValue;
-                spinBoxControl.value = newValue;
+                palette: lineHeightPalette.palette;
+                wheelEnabled: true;
+
+                onCurrentValueChanged: converter.userUnit = currentValue;
             }
         }
     }

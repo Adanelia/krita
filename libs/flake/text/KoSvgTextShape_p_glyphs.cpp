@@ -42,10 +42,10 @@ static QString glyphFormatToStr(const FT_Glyph_Format _v)
 {
     const unsigned int v = _v;
     QString s;
-    s += (v >> 24) & 0xFF;
-    s += (v >> 16) & 0xFF;
-    s += (v >> 8) & 0xFF;
-    s += (v >> 0) & 0xFF;
+    s += QChar((v >> 24) & 0xFF);
+    s += QChar((v >> 16) & 0xFF);
+    s += QChar((v >> 8) & 0xFF);
+    s += QChar((v >> 0) & 0xFF);
     return s;
 }
 
@@ -74,9 +74,9 @@ emboldenGlyphIfNeeded(const FT_Face ftface, const CharacterResult &charResult, i
         }
 
         // Some heavy weight classes don't cause FT_STYLE_FLAG_BOLD to be set,
-        // so we have to check the OS/2 table for its weight class to be sure.
-        if (const TT_OS2 *const os2Table = reinterpret_cast<TT_OS2 *>(FT_Get_Sfnt_Table(ftface, FT_SFNT_OS2));
-            os2Table && os2Table->usWeightClass >= WEIGHT_SEMIBOLD) {
+        // so we have to check the OS/2 and STAT table for its weight class to be sure.
+        hb_font_t_sp hbFont(hb_ft_font_create_referenced(ftface));
+        if (hb_style_get_value(hbFont.data(), HB_STYLE_TAG_WEIGHT) >= WEIGHT_SEMIBOLD) {
             return;
         }
 
@@ -122,6 +122,18 @@ emboldenGlyphIfNeeded(const FT_Face ftface, const CharacterResult &charResult, i
     }
 }
 
+bool faceIsItalic(const FT_Face face) {
+    hb_font_t_sp hbFont(hb_ft_font_create_referenced(face));
+    bool isItalic = hb_style_get_value(hbFont.data(), HB_STYLE_TAG_ITALIC) > 0;
+    bool isOblique = false;
+
+    if (FT_HAS_MULTIPLE_MASTERS(face)) {
+        isOblique = hb_style_get_value(hbFont.data(), HB_STYLE_TAG_SLANT_ANGLE) != 0;
+    }
+
+    return isItalic || isOblique;
+}
+
 /**
  * @brief Calculate the transformation matrices for an outline glyph, taking
  * synthesized italic into account.
@@ -141,7 +153,7 @@ static std::pair<QTransform, QTransform> calcOutlineGlyphTransform(const QTransf
     QTransform glyphObliqueTf;
 
     // Check whether we need to synthesize italic by shearing the glyph:
-    if (charResult.fontStyle != QFont::StyleNormal && !(currentGlyph.ftface->style_flags & FT_STYLE_FLAG_ITALIC)) {
+    if (charResult.fontStyle != QFont::StyleNormal && !faceIsItalic(currentGlyph.ftface)) {
         // CSS Fonts Module Level 4, 2.4. Font style: the font-style property:
         // For `oblique`, "lack of an <angle> represents 14deg".
         constexpr double SLANT_14DEG = 0.24932800284318069162403993780486;
@@ -267,7 +279,8 @@ std::pair<QTransform, qreal> KoSvgTextShape::Private::loadGlyphOnly(const QTrans
                                                                     const FT_Int32 faceLoadFlags,
                                                                     const bool isHorizontal,
                                                                     raqm_glyph_t &currentGlyph,
-                                                                    CharacterResult &charResult) const
+                                                                    CharacterResult &charResult,
+                                                                    const KoSvgText::TextRendering rendering)
 {
     /// The matrix for Italic (oblique) synthesis of outline glyphs, or for
     /// adjusting the bounding box of bitmap glyphs.
@@ -413,8 +426,8 @@ std::pair<QTransform, qreal> KoSvgTextShape::Private::loadGlyphOnly(const QTrans
                 bitmapGlyph = &charResult.glyph.emplace<Glyph::Bitmap>();
             }
 
-            // TODO: Handle glyph clusters better...
-            bitmapGlyph->image = convertFromFreeTypeBitmap(currentGlyph.ftface->glyph);
+            QImage image = convertFromFreeTypeBitmap(currentGlyph.ftface->glyph);
+            bitmapGlyph->images.append(image);
 
             // Check whether we need to synthesize italic by shearing the glyph:
             if (charResult.fontStyle != QFont::StyleNormal
@@ -431,7 +444,7 @@ std::pair<QTransform, qreal> KoSvgTextShape::Private::loadGlyphOnly(const QTrans
                 } else {
                     shearTf.shear(0, SLANT_BITMAP);
                     glyphObliqueTf.shear(0, -SLANT_BITMAP);
-                    shearAt = QPoint(bitmapGlyph->image.width() / 2, 0);
+                    shearAt = QPoint(image.width() / 2, 0);
                 }
                 // We need to shear around the baseline, hence the translation.
                 bitmapTf = (QTransform::fromTranslate(-shearAt.x(), -shearAt.y()) * shearTf
@@ -439,10 +452,10 @@ std::pair<QTransform, qreal> KoSvgTextShape::Private::loadGlyphOnly(const QTrans
             }
 
             if (!bitmapTf.isIdentity()) {
-                const QSize srcSize = bitmapGlyph->image.size();
-                bitmapGlyph->image = std::move(bitmapGlyph->image).transformed(
+                const QSize srcSize = image.size();
+                bitmapGlyph->images.replace(bitmapGlyph->images.size()-1, std::move(image).transformed(
                     bitmapTf,
-                    this->textRendering == OptimizeSpeed ? Qt::FastTransformation : Qt::SmoothTransformation);
+                    rendering == KoSvgText::RenderingOptimizeSpeed ? Qt::FastTransformation : Qt::SmoothTransformation));
 
                 // This does the same as `QImage::trueMatrix` to get the image
                 // offset after transforming.
@@ -461,27 +474,16 @@ std::pair<QTransform, qreal> KoSvgTextShape::Private::loadGlyphOnly(const QTrans
  * @return Whether the resulting charResult is valid.
  */
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
-bool KoSvgTextShape::Private::loadGlyph(const QTransform &ftTF,
-                                        const QMap<int, KoSvgText::TabSizeInfo> &tabSizeInfo,
+bool KoSvgTextShape::Private::loadGlyph(const KoSvgText::ResolutionHandler &resHandler,
                                         const FT_Int32 faceLoadFlags,
                                         const bool isHorizontal,
                                         const char32_t firstCodepoint,
+                                        const KoSvgText::TextRendering rendering,
                                         raqm_glyph_t &currentGlyph,
                                         CharacterResult &charResult,
-                                        QPointF &totalAdvanceFTFontCoordinates) const
+                                        QPointF &totalAdvanceFTFontCoordinates)
 {
-    // Whenever the freetype docs talk about a 26.6 floating point unit, they
-    // mean a 1/64 value.
-    const qreal ftFontUnit = 64.0;
-    const qreal ftFontUnitFactor = 1 / ftFontUnit;
-
-    const int cluster = static_cast<int>(currentGlyph.cluster);
-
-    QPointF spaceAdvance;
-    if (tabSizeInfo.contains(cluster)) {
-        FT_Load_Glyph(currentGlyph.ftface, FT_Get_Char_Index(currentGlyph.ftface, ' '), faceLoadFlags);
-        spaceAdvance = QPointF(currentGlyph.ftface->glyph->advance.x, currentGlyph.ftface->glyph->advance.y);
-    }
+    const QTransform ftTF = resHandler.freeTypeToPointTransform();
 
     /// The matrix for Italic (oblique) synthesis of outline glyphs, or for
     /// adjusting the bounding box of bitmap glyphs.
@@ -491,23 +493,18 @@ bool KoSvgTextShape::Private::loadGlyph(const QTransform &ftTF,
     qreal bitmapScale = 1.0;
 
     // Try to load the glyph
-    std::tie(glyphObliqueTf, bitmapScale) = loadGlyphOnly(ftTF, faceLoadFlags, isHorizontal, currentGlyph, charResult);
+    std::tie(glyphObliqueTf, bitmapScale) = loadGlyphOnly(ftTF, faceLoadFlags, isHorizontal, currentGlyph, charResult, rendering);
 
     if (charResult.visualIndex == -1) {
         hb_font_t_sp font(hb_ft_font_create_referenced(currentGlyph.ftface));
         CursorInfo cursorInfo = charResult.cursorInfo;
-        qreal lineHeight = (charResult.fontAscent-charResult.fontDescent) * bitmapScale;
-        qreal descender = charResult.fontDescent * bitmapScale;
+        qreal lineHeight = (charResult.metrics.ascender-charResult.metrics.descender) * bitmapScale;
+        qreal descender = charResult.metrics.descender * bitmapScale;
+        qint32 offset = charResult.metrics.caretOffset;
         if (isHorizontal) {
-            hb_position_t run = 0;
-            hb_position_t rise = 1;
-            hb_position_t offset = 0;
-            hb_ot_metrics_get_position_with_fallback(font.data(), HB_OT_METRICS_TAG_HORIZONTAL_CARET_RUN, &run);
-            hb_ot_metrics_get_position_with_fallback(font.data(), HB_OT_METRICS_TAG_HORIZONTAL_CARET_RISE, &rise);
-            hb_ot_metrics_get_position_with_fallback(font.data(), HB_OT_METRICS_TAG_HORIZONTAL_CARET_OFFSET, &offset);
             qreal slope = 0;
-            if (run != 0 && rise !=0) {
-                slope = double(run)/double(rise);
+            if (charResult.metrics.caretRun != 0 && charResult.metrics.caretRise !=0) {
+                slope = double(charResult.metrics.caretRun)/double(charResult.metrics.caretRise);
                 if (offset == 0) {
                     offset = descender * slope;
                 }
@@ -531,15 +528,9 @@ bool KoSvgTextShape::Private::loadGlyph(const QTransform &ftTF,
 
             cursorInfo.offsets = positions;
         } else {
-            hb_position_t run = 1;
-            hb_position_t rise = 0;
-            hb_position_t offset = 0;
-            hb_ot_metrics_get_position_with_fallback(font.data(), HB_OT_METRICS_TAG_VERTICAL_CARET_RUN, &run);
-            hb_ot_metrics_get_position_with_fallback(font.data(), HB_OT_METRICS_TAG_VERTICAL_CARET_RISE, &rise);
-            hb_ot_metrics_get_position_with_fallback(font.data(), HB_OT_METRICS_TAG_VERTICAL_CARET_OFFSET, &offset);
             qreal slope = 0;
-            if (run != 0 && rise !=0) {
-                slope = double(rise)/double(run);
+            if (charResult.metrics.caretRun != 0 && charResult.metrics.caretRise !=0) {
+                slope = double(charResult.metrics.caretRise)/double(charResult.metrics.caretRun);
                 if (offset == 0) {
                     offset = descender * slope;
                 }
@@ -554,15 +545,7 @@ bool KoSvgTextShape::Private::loadGlyph(const QTransform &ftTF,
 
     {
         QPointF advance(currentGlyph.x_advance, currentGlyph.y_advance);
-        if (tabSizeInfo.contains(cluster)) {
-            KoSvgText::TabSizeInfo tabSize = tabSizeInfo.value(cluster);
-            qreal newAdvance = tabSize.length.value * ftFontUnit;
-            if (tabSize.isNumber) {
-                QPointF extraSpacing = isHorizontal ? QPointF(tabSize.extraSpacing * ftFontUnit, 0) : QPointF(0, tabSize.extraSpacing * ftFontUnit);
-                advance = (spaceAdvance + extraSpacing) * tabSize.value;
-            } else {
-                advance = isHorizontal ? QPointF(newAdvance, advance.y()) : QPointF(advance.x(), newAdvance);
-            }
+        if (charResult.tabSize) {
             charResult.glyph.emplace<Glyph::Outline>();
         }
 
@@ -589,48 +572,58 @@ bool KoSvgTextShape::Private::loadGlyph(const QTransform &ftTF,
         Glyph::Bitmap *const bitmapGlyph = std::get_if<Glyph::Bitmap>(&charResult.glyph);
 
         if (bitmapGlyph) {
-            const int width = bitmapGlyph->image.width();
-            const int height = bitmapGlyph->image.height();
+            const int width = bitmapGlyph->images.last().width();
+            const int height = bitmapGlyph->images.last().height();
             const int left = currentGlyph.ftface->glyph->bitmap_left;
             const int top = currentGlyph.ftface->glyph->bitmap_top - height;
             QRect bboxPixel(left, top, width, height);
             if (!isHorizontal) {
                 bboxPixel.moveLeft(-(bboxPixel.width() / 2));
+                bboxPixel.moveTop(-bboxPixel.height());
             }
-            bitmapGlyph->drawRect = ftTF.mapRect(QRectF(bboxPixel.topLeft() * ftFontUnit, bboxPixel.size() * ftFontUnit));
+            QRectF drawRect = ftTF.mapRect(QRectF(bboxPixel.topLeft() * resHandler.freeTypePixel, bboxPixel.size() * resHandler.freeTypePixel));
+            drawRect.translate(charResult.advance - ftTF.map(advance));
+            bitmapGlyph->drawRects.append(drawRect);
         }
 
         QRectF bbox;
         if (isHorizontal) {
             bbox = QRectF(0,
-                          charResult.fontDescent * bitmapScale,
+                          charResult.metrics.descender * bitmapScale,
                           ftTF.inverted().map(charResult.advance).x(),
-                          (charResult.fontAscent - charResult.fontDescent) * bitmapScale);
-            bbox = glyphObliqueTf.mapRect(bbox);
+                          (charResult.metrics.ascender - charResult.metrics.descender) * bitmapScale);
+
         } else {
-            bbox = QRectF(charResult.fontDescent * bitmapScale,
+            bbox = QRectF(charResult.metrics.descender * bitmapScale,
                           0,
-                          (charResult.fontAscent - charResult.fontDescent) * bitmapScale,
+                          (charResult.metrics.ascender - charResult.metrics.descender) * bitmapScale,
                           ftTF.inverted().map(charResult.advance).y());
-            bbox = glyphObliqueTf.mapRect(bbox);
         }
-        charResult.boundingBox = ftTF.mapRect(bbox);
-        charResult.scaledHalfLeading = ftTF.map(QPointF(charResult.fontHalfLeading, charResult.fontHalfLeading)).x();
-        charResult.scaledAscent = isHorizontal? charResult.boundingBox.top(): charResult.boundingBox.right();
-        charResult.scaledDescent = isHorizontal? charResult.boundingBox.bottom(): charResult.boundingBox.left();
-        if (isHorizontal) {
-            charResult.lineHeightBox = charResult.boundingBox.adjusted(0, -charResult.scaledHalfLeading, 0, charResult.scaledHalfLeading);
-        } else {
-            charResult.lineHeightBox = charResult.boundingBox.adjusted(-charResult.scaledHalfLeading, 0, charResult.scaledHalfLeading, 0);
+        bbox = glyphObliqueTf.mapRect(bbox);
+        charResult.isHorizontal = isHorizontal;
+        QRectF scaledBBox = resHandler.adjust(ftTF.mapRect(bbox));
+        charResult.scaledHalfLeading = resHandler.adjust(ftTF.map(QPointF(charResult.fontHalfLeading, charResult.fontHalfLeading))).x();
+        charResult.scaledAscent = isHorizontal? scaledBBox.top(): scaledBBox.right();
+        charResult.scaledDescent = isHorizontal? scaledBBox.bottom(): scaledBBox.left();
+
+        if (charResult.tabSize) {
+            charResult.tabSize = ftTF.map(QPointF(*charResult.tabSize, *charResult.tabSize)).x();
+        }
+
+        if(!qFuzzyCompare(bitmapScale, 1.0)) {
+            charResult.metrics.scaleBaselines(bitmapScale);
+        }
+        if (charResult.extraFontScaling < 1.0) {
+            charResult.scaleCharacterResult(charResult.extraFontScaling, charResult.extraFontScaling);
         }
 
         if (bitmapGlyph) {
-            charResult.boundingBox |= bitmapGlyph->drawRect;
+            charResult.inkBoundingBox |= bitmapGlyph->drawRects.last();
         } else if (const auto *outlineGlyph = std::get_if<Glyph::Outline>(&charResult.glyph)) {
-            charResult.boundingBox |= outlineGlyph->path.boundingRect();
+            charResult.inkBoundingBox |= outlineGlyph->path.boundingRect();
         } else if (const auto *colorGlyph = std::get_if<Glyph::ColorLayers>(&charResult.glyph)) {
             Q_FOREACH (const QPainterPath &p, colorGlyph->paths) {
-                charResult.boundingBox |= p.boundingRect();
+                charResult.inkBoundingBox |= p.boundingRect();
             }
         } else if (!std::holds_alternative<std::monostate>(charResult.glyph)) {
             warnFlake << "Unhandled glyph type" << charResult.glyph.index();

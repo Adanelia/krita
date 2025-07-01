@@ -9,43 +9,73 @@ import QtQuick.Layouts 1.12
 import org.krita.flake.text 1.0
 
 CollapsibleGroupProperty {
-    propertyName: i18nc("@label", "Font Family");
-    propertyType: TextPropertyBase.Character;
+    propertyTitle: i18nc("@label", "Font Family");
+    propertyName: "font-family";
+    propertyType: TextPropertyConfigModel.Character;
+    visibilityState: TextPropertyConfigModel.AlwaysVisible;
     toolTip: i18nc("@info:tooltip",
                    "Font family allows selecting a list of fonts that should be used for the current text. The first font family is the primary font used, while each font family after that is used for fallback.");
     searchTerms: i18nc("comma separated search terms for the font-family property, matching is case-insensitive",
                        "font-family, typeface, font, fallback");
 
     property var fontFamilies: [];
-    property var fontFamilyModel : [];
 
     onPropertiesUpdated: {
         blockSignals = true;
         fontFamilies = properties.fontFamilies;
-        visible = properties.fontFamiliesState !== KoSvgTextPropertiesModel.PropertyUnset;
+        propertyState = [properties.fontFamiliesState];
+        setVisibleFromProperty();
         blockSignals = false;
     }
 
     onFontFamiliesChanged: {
         if (blockSignals) {
             if (fontFamilies.length >0) {
-                mainFamilyCmb.currentIndex = mainFamilyCmb.find(fontFamilies[0]);
+                mainFamilyCmb.updateCurrentIndex();
             }
             familyListView.model = fontFamilies;
         } else {
             properties.fontFamilies = fontFamilies;
         }
+        mainWindow.slotUpdateStylesModel();
     }
 
-    titleItem: ComboBox {
-        id: mainFamilyCmb;
-        model: fontFamilyModel;
-        Layout.fillWidth: true;
-        onActivated: {if (fontFamilies.length >0) {
-                fontFamilies[0] = currentText;
+    titleItem: RowLayout {
+        width: parent.width;
+        height: childrenRect.height;
+        Label {
+            id: propertyTitleLabel;
+            text: propertyTitle;
+            verticalAlignment: Text.AlignVCenter
+            color: sysPalette.text;
+            elide: Text.ElideRight;
+            Layout.maximumWidth: contentWidth;
+
+        }
+        FontResourceDropdown {
+            id: mainFamilyCmb;
+            Layout.fillWidth: true;
+            onActivated: {
+                if (fontFamilies.length >0) {
+                    fontFamilies[0] = text;
+                } else {
+                    fontFamilies = [ text ];
+                }
+            }
+            PaletteControl {
+                id: mainCmbPalette;
+                colorGroup: parent.enabled? SystemPalette.Active: SystemPalette.Disabled;
+            }
+            palette: mainCmbPalette.palette;
+            function updateCurrentIndex() {
+                var name = mainWindow.wwsFontFamilyName(fontFamilies[0]);
+                if (name !== modelWrapper.resourceFilename) {
+                    modelWrapper.currentTag = 0;
+                    modelWrapper.currentIndex = -1;
+                }
+                modelWrapper.setResourceToFileName(name)
             }
         }
-        wheelEnabled: true;
     }
 
     onEnableProperty: properties.fontFamiliesState = KoSvgTextPropertiesModel.PropertySet;
@@ -64,21 +94,69 @@ CollapsibleGroupProperty {
         ScrollView {
             id: fullFamilyList;
             Layout.fillWidth: true;
-            Layout.preferredHeight: ItemDelegate.implicitHeight * 3;
-            background: Rectangle {
-                color: sysPalette.alternateBase;
-                border.color: sysPalette.text;
-                border.width: 1;
-            }
+            Layout.preferredHeight: contentHeight;
             ListView {
                 id: familyListView;
                 anchors.fill: parent;
                 model: []
-                delegate: ItemDelegate {
-                    text: modelData;
+
+                delegate: RowLayout {
+                    id: fontListDelegate;
+                    spacing: 5;
                     width: parent.width;
+                    property int dIndex: index;
+                    FontResourceDropdown {
+                        id: fontCmb;
+                        Layout.fillWidth: true;
+                        onActivated: {
+                            fontFamilies[fontListDelegate.dIndex] = text;
+                        }
+                        PaletteControl {
+                            id: fontCmbPalette;
+                            colorGroup: parent.enabled? SystemPalette.Active: SystemPalette.Disabled;
+                        }
+                        palette: fontCmbPalette.palette;
+                        Component.onCompleted: {
+                            if (fontListDelegate.dIndex === 0) {
+                                modelWrapper = mainFamilyCmb.modelWrapper;
+                            } else {
+                                updateCurrentIndex();
+                            }
+                        }
+                        function updateCurrentIndex() {
+                            modelWrapper.setResourceToFileName(mainWindow.wwsFontFamilyName(fontFamilies[fontListDelegate.dIndex]))
+                        }
+                    }
+                    ToolButton {
+                        id: removeFont;
+                        icon.width: 22;
+                        icon.height: 22;
+                        icon.source: "qrc:///22_light_list-remove.svg"
+                        onClicked: fontFamilies.splice(fontListDelegate.dIndex, 1);
+                        ToolTip.text: i18n("Remove family");
+                        ToolTip.delay: Qt.styleHints.mousePressAndHoldInterval;
+                        ToolTip.visible: hovered;
+                    }
+                }
+                Label {
+                    text: i18n("Family list is empty.");
+                    wrapMode: Text.WordWrap;
+                    anchors.fill: parent;
+                    anchors.horizontalCenter: parent.horizontalCenter;
+                    visible: parent.count === 0;
                 }
             }
+        }
+
+        Item {
+            width: 1;
+            height: 1;
+        }
+        Button {
+            id: addFamilyButtons;
+            Layout.fillWidth: true;
+            text: i18n("Add Fallback Family");
+            onClicked: fontFamilies.push("sans-serif");
         }
 
 

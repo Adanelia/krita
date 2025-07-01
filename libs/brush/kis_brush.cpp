@@ -15,7 +15,6 @@
 #include <QFile>
 #include <QPainterPath>
 #include <QPoint>
-#include <QFileInfo>
 #include <QBuffer>
 
 #include <kis_debug.h>
@@ -329,6 +328,8 @@ bool KisBrush::isPiercedApprox() const
 
     qreal w = image.width();
     qreal h = image.height();
+
+    if (w < 3 && h < 3) { return false; }
 
     qreal xPortion = qMin(0.1, 5.0 / w);
     qreal yPortion = qMin(0.1, 5.0 / h);

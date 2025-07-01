@@ -3,14 +3,15 @@
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
  */
-import QtQuick 2.0
-import QtQuick.Controls 2.0
+import QtQuick 2.15
+import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.12
 import org.krita.flake.text 1.0
 
 TextPropertyBase {
-    propertyName: i18nc("@title:group", "Text Decoration");
-    propertyType: TextPropertyBase.Character;
+    propertyTitle: i18nc("@title:group", "Text Decoration");
+    propertyName: "text-decoration";
+    propertyType: TextPropertyConfigModel.Character;
     toolTip: i18nc("@info:tooltip",
                    "Text Decoration allows drawing underlines, overlines and striking through text.");
     searchTerms: i18nc("comma separated search terms for the text-decoration property, matching is case-insensitive",
@@ -30,7 +31,12 @@ TextPropertyBase {
         lineStyle = properties.textDecorationStyle;
         lineColor = properties.textDecorationColor;
 
-        visible = properties.textDecorationLineState !== KoSvgTextPropertiesModel.PropertyUnset
+        propertyState = [
+            properties.textDecorationLineState,
+            properties.textDecorationStyleState,
+            properties.textDecorationColorState
+        ];
+        setVisibleFromProperty();
         blockSignals = false;
     }
 
@@ -59,6 +65,12 @@ TextPropertyBase {
         }
     }
 
+    onLineColorChanged: {
+        if (!blockSignals) {
+            properties.textDecorationColor = lineColor;
+        }
+    }
+
     onEnableProperty: {
         properties.textDecorationLineState = KoSvgTextPropertiesModel.PropertySet;
     }
@@ -75,7 +87,7 @@ TextPropertyBase {
         }
 
         Label {
-            text: propertyName;
+            text: propertyTitle;
             Layout.columnSpan: 2;
             elide: Text.ElideRight;
             Layout.fillWidth: true;
@@ -99,6 +111,11 @@ TextPropertyBase {
         CheckBox {
             Layout.columnSpan: 2;
             text: i18nc("@option:check", "Underline")
+            icon.height: 16;
+            icon.width: 16;
+            icon.source: "qrc:///16_light_format-text-underline.svg"
+            icon.color: palette.text;
+            display: AbstractButton.TextBesideIcon;
             id: underlineCbx;
         }
         Item {
@@ -108,6 +125,11 @@ TextPropertyBase {
         CheckBox {
             Layout.columnSpan: 2;
             text: i18nc("@option:check", "Overline")
+            icon.height: 16;
+            icon.width: 16;
+            icon.source: "qrc:///16_light_format-text-overline.svg"
+            icon.color: palette.text;
+            display: AbstractButton.TextBesideIcon;
             id: overlineCbx;
         }
         Item {
@@ -117,36 +139,50 @@ TextPropertyBase {
         CheckBox {
             Layout.columnSpan: 2;
             text: i18nc("@option:check", "Line-through")
+            icon.height: 16;
+            icon.width: 16;
+            icon.source: "qrc:///16_light_format-text-strikethrough.svg"
+            icon.color: palette.text;
+            display: AbstractButton.TextBesideIcon;
             id: linethroughCbx;
         }
 
 
-        Item {
-            width: firstColumnWidth;
-            height: 1;
+        RevertPropertyButton {
+            revertState: properties.textDecorationColorState;
+            inheritable: false;
+            onClicked: properties.textDecorationColorState = KoSvgTextPropertiesModel.PropertyUnset;
         }
 
-        CheckBox {
-            text: i18nc("@label:chooser", "Color")
+        Label {
+            text: i18nc("@label:chooser", "Color:")
             id: colorCbx;
-            enabled: false;
+            elide: Text.ElideRight;
+            Layout.fillWidth: true;
+            font.italic: properties.textDecorationColorState === KoSvgTextPropertiesModel.PropertyTriState;
         }
-        Rectangle {
-            // replace with color picker?
-            color: lineColor;
+        Button {
             Layout.fillWidth: true;
             Layout.fillHeight: true;
+            contentItem: Rectangle {
+                color: lineColor;
+            }
+            onClicked: {
+                lineColor = mainWindow.modalColorDialog(lineColor);
+            }
         }
 
-        Item {
-            width: firstColumnWidth;
-            height: 1;
+        RevertPropertyButton {
+            revertState: properties.textDecorationStyleState;
+            inheritable: false;
+            onClicked: properties.textDecorationStyleState = KoSvgTextPropertiesModel.PropertyUnset;
         }
         Label {
             text: i18nc("@label:listbox", "Style:")
             Layout.alignment: Qt.AlignRight | Qt.AlignVCenter;
             elide: Text.ElideRight;
             Layout.fillWidth: true;
+            font.italic: properties.textDecorationStyleState === KoSvgTextPropertiesModel.PropertyTriState;
         }
 
         ComboBox {

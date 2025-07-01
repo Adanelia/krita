@@ -132,6 +132,12 @@ void ThemeManager::setCurrentTheme(const QString& name)
 
 void ThemeManager::slotChangePalette()
 {
+    if (currentThemeName() == "System") {
+        qApp->setPalette(QPalette());
+        Q_EMIT signalThemeChanged();
+        return;
+    }
+
     //qDebug() << "slotChangePalette" << sender();
 
     // We must clear the icon cache before the palette is changed. That way
@@ -183,16 +189,6 @@ void ThemeManager::slotChangePalette()
     qApp->setProperty("KDE_COLOR_SCHEME_PATH", filename);
     qApp->setPalette(palette);
 
-#ifdef Q_OS_MACOS
-    if (theme == "Krita bright" || theme.isEmpty()) {
-        qApp->setStyle("Macintosh");
-        qApp->style()->polish(qApp);
-    } else {
-        qApp->setStyle("Fusion");
-        qApp->style()->polish(qApp);
-    }
-#endif
-
     Q_EMIT signalThemeChanged();
 }
 
@@ -236,6 +232,14 @@ void ThemeManager::populateThemeMenu()
         action->setCheckable(true);
         actionMap.insert(name, action);
     }
+
+#ifdef Q_OS_MAC
+    // Add a "System" theme, which resets the palette to system colors
+    // It only seems to work as expected on macOS.
+    action = new QAction("System", d->themeMenuActionGroup);
+    action->setCheckable(true);
+    actionMap.insert("System", action);
+#endif
 
     // sort the list
     QStringList actionMapKeys = actionMap.keys();

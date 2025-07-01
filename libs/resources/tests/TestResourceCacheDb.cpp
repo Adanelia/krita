@@ -6,7 +6,9 @@
 
 #include "TestResourceCacheDb.h"
 #include <simpletest.h>
-#include <QtSql>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QSqlDatabase>
 #include <QStandardPaths>
 #include <QDir>
 #include <QImage>
@@ -61,7 +63,7 @@ void TestResourceCacheDb::testLookupTables()
     QVERIFY(r);
     QVERIFY(query.lastError() == QSqlError());
     query.first();
-    QCOMPARE(query.value(0).toInt(), 6);
+    QCOMPARE(query.value(0).toInt(), 7);
 
     r = query.exec("SELECT COUNT(*) FROM resource_types");
     QVERIFY(r);

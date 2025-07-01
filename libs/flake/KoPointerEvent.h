@@ -11,12 +11,14 @@
 #ifndef KOPOINTEREVENT_H
 #define KOPOINTEREVENT_H
 
-#include <QTouchEvent>
 #include <QSharedPointer>
+#include <QPointF>
 
+class QEvent;
 class QTabletEvent;
 class QMouseEvent;
 class QWheelEvent;
+class QTouchEvent;
 
 #include "kritaflake_export.h"
 
@@ -150,7 +152,7 @@ public:
      * towards the tablet's physical right. The angle is in the range -60
      * to +60 degrees. The default value is 0.
      */
-    int xTilt() const;
+    qreal xTilt() const;
 
     /**
      * Return the y position in widget coordinates.
@@ -164,7 +166,7 @@ public:
      * towards the tablet's physical right. The angle is in the range -60
      * to +60 degrees. The default value is 0.
      */
-    int yTilt() const;
+    qreal yTilt() const;
 
     /**
      * Returns the z position of the device. Typically this is represented
@@ -188,9 +190,11 @@ public:
     bool isTabletEvent();
 
 public:
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
     static void copyQtPointerEvent(const QMouseEvent *event, QScopedPointer<QEvent> &dst);
     static void copyQtPointerEvent(const QTabletEvent *event, QScopedPointer<QEvent> &dst);
     static void copyQtPointerEvent(const QTouchEvent *event, QScopedPointer<QEvent> &dst);
+#endif
 
 protected:
     friend class KoToolProxy;

@@ -9,8 +9,17 @@ endif()
 project(krita LANGUAGES ${SUPPORTED_LANGUAGES})
 message(STATUS "Using CMake version: ${CMAKE_VERSION}")
 
+# Select the Qt version we want to use
+# Qt5 is the default, set QT_MAJOR_VERSION to 6 to look for Qt6
+option(BUILD_WITH_QT6 "Build against Qt 6" OFF)
+
+if (BUILD_WITH_QT6)
+set(MIN_QT_VERSION 6.0.0)
+set(MIN_FRAMEWORKS_VERSION 6.0.0)
+else()
 set(MIN_QT_VERSION 5.15.0)
 set(MIN_FRAMEWORKS_VERSION 5.44.0)
+endif()
 
 set( CMAKE_CXX_STANDARD 17 )
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
@@ -68,6 +77,8 @@ if (POLICY CMP0135)
     cmake_policy(SET CMP0135 NEW)
 endif()
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 if (APPLE)
     add_subdirectory(packaging/macos)
     set(MACOSX_RPATH TRUE)
@@ -77,7 +88,12 @@ if (APPLE)
     set(CMAKE_MACOSX_RPATH 1)
     set(BUILD_WITH_INSTALL_RPATH 1)
     set(MACOS_GUI_TEST "GUI")
-    add_definitions(-mmacosx-version-min=10.13 -Wno-macro-redefined -Wno-deprecated-register)
+    if (BUILD_WITH_QT6)
+        set(MACOS_MINIMUM_VERSION 12)
+    else()
+        set(MACOS_MINIMUM_VERSION 10.14)
+    endif()
+    add_definitions(-mmacosx-version-min=${MACOS_MINIMUM_VERSION} -Wno-macro-redefined -Wno-deprecated-register)
     if (CMAKE_OSX_ARCHITECTURES)
         message(STATUS "CMake OSX architectures: ${CMAKE_OSX_ARCHITECTURES}")
     endif()
@@ -88,7 +104,7 @@ function(macos_test_fixrpath)
     if (APPLE AND BUILD_TESTING)
     foreach(TEST IN LISTS ARGN)
         set_property(TARGET ${TEST}
-                     PROPERTY BUILD_RPATH "@loader_path/../../../../lib;@loader_path/../lib;@loader_path/../Frameworks;${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}")
+                     PROPERTY BUILD_RPATH "@loader_path/../../../../lib;@loader_path/../lib;@loader_path/../Frameworks;${CMAKE_INSTALL_PREFIX}/${KDE_INSTALL_LIBDIR}")
     endforeach()
     endif()
 endfunction()
@@ -102,7 +118,11 @@ endif()
 ## Constants defines ##
 #######################
 ######################
-
+if (BUILD_WITH_QT6)
+set(KRITA_VERSION_STRING "6.0.0-prealpha")
+set(KRITA_STABLE_VERSION_MAJOR 6)
+set(KRITA_STABLE_VERSION_MINOR 0)
+else()
 # define common versions of Krita applications, used to generate kritaversion.h
 # update these version for every release:
 set(KRITA_VERSION_STRING "5.3.0-prealpha")
@@ -110,6 +130,8 @@ set(KRITA_VERSION_STRING "5.3.0-prealpha")
 set(KRITA_STABLE_VERSION_MAJOR 5)
 # Minor version: 0 for 4.0, 1 for 4.1, etc.
 set(KRITA_STABLE_VERSION_MINOR 3)
+endif()
+
 # Bugfix release version, or 0 for before the first stable release
 set(KRITA_VERSION_RELEASE 0)
 # the 4th digit, really only used for the Windows installer:
@@ -132,14 +154,49 @@ message(STATUS "Krita version: ${KRITA_VERSION_STRING}")
 
 # Define the generic version of the Krita libraries here
 # This makes it easy to advance it when the next Krita release comes.
-# 14 was the last GENERIC_KRITA_LIB_VERSION_MAJOR of the previous Krita series
-# (2.x) so we're starting with 15 in 3.x series, 16 in 4.x series
-if(KRITA_STABLE_VERSION_MAJOR EQUAL 5)
-    math(EXPR GENERIC_KRITA_LIB_VERSION_MAJOR "${KRITA_STABLE_VERSION_MINOR} + 17")
-else()
-    # let's make sure we won't forget to update the "16"
-    message(FATAL_ERROR "Reminder: please update offset == 16 used to compute GENERIC_KRITA_LIB_VERSION_MAJOR to something bigger")
+#
+# In general Krita does **not** guarantee any binary compatibility over C++
+# libraries between the releases, so there is not reason to update SOVERSION
+# too often.
+#
+# The only reason why we use SOVERSION is to allow multiple **major** versions
+# of Krita to coexist in the same installation, e.g. Krita 5 and Krita 6.
+#
+# We don't support simultaneous installations of, say, Krita 5.1 and Krita 5.2
+# (one should use AppImage for things like that)
+#
+# Historical note:
+# 
+# We had a mess with versions previously, we used to increase the versions with
+# every minor release only. It caused multiple problems: 1) the soversions of 
+# different major releases did overlap; 2) the soversions of different bugfix
+# releases were the same, even tough they were not binary compatible.
+#
+# In Krita 6 we just stop updating SOVERSION on minor releases and declare that
+# we have no binary compatibility between releases.
+#
+# Krita 5.0: SOVERSION -> 17
+# Krita 5.1: SOVERSION -> 18
+# Krita 5.2: SOVERSION -> 19
+# Krita 5.3: SOVERSION -> 20
+#
+# Krita 6.x: SOVERSION -> 21
+# Krita 7.x: SOVERSION -> 22
+#
+if(KRITA_STABLE_VERSION_MAJOR EQUAL 5) 
+    # In Krita 5 days we increased the SOVERSION with every minor release
+    if(KRITA_STABLE_VERSION_MINOR LESS_EQUAL 3)
+        math(EXPR GENERIC_KRITA_LIB_VERSION_MAJOR "${KRITA_STABLE_VERSION_MINOR} + 17")
+    else()
+        set(GENERIC_KRITA_LIB_VERSION_MAJOR 20)
+    endif()
+elseif(KRITA_STABLE_VERSION_MAJOR GREATER_EQUAL 6)
+    # In Krita 6 days we increased the SOVERSION only with every **major** release.
+    # We don't guarantee any ABI compatibility between the releases, so there is no
+    # use increasing SOVERSION too often
+    math(EXPR GENERIC_KRITA_LIB_VERSION_MAJOR "${KRITA_STABLE_VERSION_MAJOR} - 6 + 21")
 endif()
+
 set(GENERIC_KRITA_LIB_VERSION "${GENERIC_KRITA_LIB_VERSION_MAJOR}.0.0")
 set(GENERIC_KRITA_LIB_SOVERSION "${GENERIC_KRITA_LIB_VERSION_MAJOR}")
 
@@ -344,13 +401,12 @@ endif(WIN32)
 #########################
 ########################
 
-# Select the Qt version we want to use
-# Qt5 is the default, set QT_MAJOR_VERSION to 6 to look for Qt6
-option(BUILD_WITH_QT6 "Build against Qt 6" OFF)
 if (BUILD_WITH_QT6)
     set(QT_MAJOR_VERSION 6)
+    find_package(ECM 6.0 REQUIRED CONFIG)
 else()
     set(QT_MAJOR_VERSION 5)
+    find_package(ECM 5.91 REQUIRED CONFIG)
 endif()
 
 # KDE Frameworks
@@ -360,7 +416,6 @@ if (KF_MAJOR STREQUAL "6")
     set(KF_DEP_VERSION "6.0.0")
 endif()
 
-find_package(ECM 5.22 REQUIRED CONFIG)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${ECM_MODULE_PATH})
 
 include(ECMOptionalAddSubdirectory)
@@ -375,24 +430,33 @@ include(ECMInstallIcons)
 include(CMakePackageConfigHelpers)
 include(WriteBasicConfigVersionFile)
 include(CheckFunctionExists)
+include(CheckCXXSymbolExists)
 
-include(KDEInstallDirs)
-if (QT_MAJOR_VERSION STREQUAL "6")
-    set(ICON_INSTALL_DIR ${KDE_INSTALL_ICONDIR})
-endif()
+set (KDE_COMPILERSETTINGS_LEVEL "5.0")
+set (KDE_QT_MODERNCODE_DEFINITIONS_LEVEL "5.0")
+set (KDE_SKIP_PEDANTIC_WARNINGS_SETTINGS TRUE)
+set (KDE_SKIP_MISSING_INCLUDE_DIRS_WARNINGS_SETTINGS TRUE)
+set (KDE_SKIP_NULLPTR_WARNINGS_SETTINGS TRUE)
 
-include(KDECMakeSettings)
 include(KDECompilerSettings)
 
+include(KDEInstallDirs)
+
+include(KDECMakeSettings)
+
 if (WIN32)
-# KDECompilerSettings sets Windows Vista as the default,
-# while MSVC's default is 0x0A00 (_WIN32_WINNT_WIN10, sdkddkver.h) and
-# MinGW's is 0x0601 (_WIN32_WINNT_WIN7, _mingw.h).
-# Both are enough to supply the APIs we need in main.cc, but since we
-# need the Windows 8 APIs anyway for the surface orientation and Store API,
-# we set the minimum here.
-remove_definitions(-D_WIN32_WINNT=0x0600 -DWINVER=0x0600 -D_WIN32_IE=0x0600)
-add_definitions(-D_WIN32_WINNT=0x0602 -DWINVER=0x0602  -D_WIN32_IE=0x0602)
+
+# Qt6 targets Windows10, so we shouldn't change it in any way
+if (QT_MAJOR_VERSION STREQUAL "5")
+    # KDECompilerSettings sets Windows Vista as the default,
+    # while MSVC's default is 0x0A00 (_WIN32_WINNT_WIN10, sdkddkver.h) and
+    # MinGW's is 0x0601 (_WIN32_WINNT_WIN7, _mingw.h).
+    # Both are enough to supply the APIs we need in main.cc, but since we
+    # need the Windows 8 APIs anyway for the surface orientation and Store API,
+    # we set the minimum here.
+    remove_definitions(-D_WIN32_WINNT=0x0600 -DWINVER=0x0600 -D_WIN32_IE=0x0600)
+    add_definitions(-D_WIN32_WINNT=0x0602 -DWINVER=0x0602  -D_WIN32_IE=0x0602)
+endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
     if (MSVC) # or CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
@@ -446,10 +510,12 @@ find_package(Qt${QT_MAJOR_VERSION} ${MIN_QT_VERSION}
 )
 
 if (ANDROID)
-    find_package(Qt${QT_MAJOR_VERSION} ${MIN_QT_VERSION}
-        REQUIRED COMPONENTS
-        AndroidExtras
-    )
+    if (QT_MAJOR_VERSION STREQUAL "5")
+        find_package(Qt${QT_MAJOR_VERSION} ${MIN_QT_VERSION}
+            REQUIRED COMPONENTS
+            AndroidExtras
+        )
+    endif()
 endif()
 
 if (QT_MAJOR_VERSION STREQUAL "6")
@@ -458,11 +524,85 @@ if (QT_MAJOR_VERSION STREQUAL "6")
         Core5Compat
         OpenGL
         OpenGLWidgets
+        SvgWidgets
+    )
+
+    find_package(Qt${QT_MAJOR_VERSION} ${MIN_QT_VERSION}
+        OPTIONAL_COMPONENTS
+        WaylandClient
+    )
+
+    find_package(KF6 ${MIN_FRAMEWORKS_VERSION}
+        REQUIRED COMPONENTS
+        ColorScheme
     )
 endif()
 
+set(HAVE_WAYLAND FALSE)
+if (TARGET Qt::WaylandClient)
+    message(STATUS "Found Qt::WaylandClient, enabling kritawayland platform")
+    set(HAVE_WAYLAND TRUE)
+endif()
 
-if (WIN32)
+#
+# Check for the presence of custom patches in Qt
+#
+set(CMAKE_REQUIRED_INCLUDES ${Qt${QT_MAJOR_VERSION}Gui_INCLUDE_DIRS})
+set(CMAKE_REQUIRED_LIBRARIES ${Qt${QT_MAJOR_VERSION}Gui_LIBRARIES})
+
+check_cxx_symbol_exists(QT_HAS_ENTER_LEAVE_PATCH "QtGui/qevent.h" KRITA_QT_HAS_ENTER_LEAVE_PATCH)
+
+if (QT_MAJOR_VERSION STREQUAL "5")
+    # in Qt5 we didn't have a separate definition for key-press/release patch
+    set(KRITA_QT_HAS_UNBALANCED_KEY_PRESS_RELEASE_PATCH ${KRITA_QT_HAS_ENTER_LEAVE_PATCH})
+else()
+    check_cxx_symbol_exists(QT_HAS_UNBALANCED_KEY_PRESS_RELEASE_PATCH "QtGui/qevent.h" KRITA_QT_HAS_UNBALANCED_KEY_PRESS_RELEASE_PATCH)
+endif()
+
+unset(CMAKE_REQUIRED_INCLUDES)
+unset(CMAKE_REQUIRED_LIBRARIES)
+
+
+if (QT_MAJOR_VERSION STREQUAL "5")
+    # in Qt5 we didn't have a separate definition for key-press/release patch
+    set(KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH FALSE)
+else()
+    set(CMAKE_REQUIRED_INCLUDES ${Qt6Gui_INCLUDE_DIRS} ${Qt6Gui_PRIVATE_INCLUDE_DIRS})
+    set(CMAKE_REQUIRED_LIBRARIES ${Qt6Gui_LIBRARIES})
+
+    CHECK_CXX_SOURCE_COMPILES("
+#include <QtGui/rhi/qrhi.h>
+int main(int, char *[]) {
+bool (QRhi::*x)() const;
+x = &QRhi::isLastFrameCompletedOnGPU;
+Q_UNUSED(x);
+return 0;
+}
+"
+    KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
+    )
+
+    unset(CMAKE_REQUIRED_INCLUDES)
+    unset(CMAKE_REQUIRED_LIBRARIES)
+
+endif()
+
+option(KRITA_QT_HAS_ENTER_LEAVE_PATCH "Qt has a custom patch for unbalanced enter/leave events" ON)
+add_feature_info("Qt: Unbalanced Enter/Leave patch" KRITA_QT_HAS_ENTER_LEAVE_PATCH "Krita will disable internal workarounds for unbalanced Enter/Leave")
+
+option(KRITA_QT_HAS_UNBALANCED_KEY_PRESS_RELEASE_PATCH "Qt has a custom patch for unbalanced KeyPress/KeyRelease events in non-latin layouts" ON)
+add_feature_info("Qt: Unbalanced KeyPress/KeyRelease in non-latin layout patch" KRITA_QT_HAS_UNBALANCED_KEY_PRESS_RELEASE_PATCH "Krita will disable internal workarounds for unbalanced KeyPress/KeyRelease events")
+
+option(KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH "Qt has a custom patch for limiting FPS to the screen framerate" ON)
+add_feature_info("Qt: Compressed updates patch" KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH "Krita will compress the screen updates to the maximum FPS of available displays")
+
+
+configure_file(config-qt-patches-present.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config-qt-patches-present.h)
+
+#
+# Check for the presence the Wintab switch in Qt5
+#
+if (WIN32 AND QT_MAJOR_VERSION STREQUAL "5")
     set(CMAKE_REQUIRED_INCLUDES ${Qt5Core_INCLUDE_DIRS})
     set(CMAKE_REQUIRED_LIBRARIES ${Qt5Core_LIBRARIES})
 
@@ -472,34 +612,63 @@ int main(int argc, char *argv[]) {
 QCoreApplication::setAttribute(Qt::AA_MSWindowsUseWinTabAPI);
 }
 "
-    QT_HAS_WINTAB_SWITCH
+    QT5_HAS_WINTAB_SWITCH
     )
 
     unset(CMAKE_REQUIRED_INCLUDES)
     unset(CMAKE_REQUIRED_LIBRARIES)
 
-    option(USE_QT_TABLET_WINDOWS "Do not use Krita's forked Wintab and Windows Ink support on Windows, but leave everything to Qt." ON)
-	add_feature_info("Use Qt's Windows Tablet Support" USE_QT_TABLET_WINDOWS "Do not use Krita's forked Wintab and Windows Ink support on Windows, but leave everything to Qt.")
-    configure_file(config_use_qt_tablet_windows.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config_use_qt_tablet_windows.h)
-endif ()     
+#QT5_HAS_WINTAB_SWITCH
 
-set(CMAKE_REQUIRED_INCLUDES ${Qt5Core_INCLUDE_DIRS} ${Qt5Gui_INCLUDE_DIRS} ${Qt5Widgets_INCLUDE_DIRS})
-set(CMAKE_REQUIRED_LIBRARIES ${Qt5Core_LIBRARIES} ${Qt5Gui_LIBRARIES} ${Qt5Widgets_LIBRARIES})
+    configure_file(config_qt5_has_wintab_switch.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config_qt5_has_wintab_switch.h)
+endif ()
+
 
 
 if (WIN32)
-    CHECK_CXX_SOURCE_COMPILES("
-    #include <QSurfaceFormat>
-    int main(int argc, char *argv[]) {
-    QSurfaceFormat fmt;
-    fmt.setColorSpace(QSurfaceFormat::scRGBColorSpace);
-    fmt.setColorSpace(QSurfaceFormat::bt2020PQColorSpace);
-    }
-    "
-    HAVE_HDR
-    )
+    if (QT_MAJOR_VERSION STREQUAL "5")
+        set(CMAKE_REQUIRED_INCLUDES ${Qt5Core_INCLUDE_DIRS} ${Qt5Gui_INCLUDE_DIRS} ${Qt5Widgets_INCLUDE_DIRS})
+        set(CMAKE_REQUIRED_LIBRARIES ${Qt5Core_LIBRARIES} ${Qt5Gui_LIBRARIES} ${Qt5Widgets_LIBRARIES})
+
+        CHECK_CXX_SOURCE_COMPILES("
+            #include <QSurfaceFormat>
+            int main(int argc, char *argv[]) {
+                QSurfaceFormat fmt;
+                fmt.setColorSpace(QSurfaceFormat::scRGBColorSpace);
+                fmt.setColorSpace(QSurfaceFormat::bt2020PQColorSpace);
+            }
+            "
+            HAVE_HDR
+        )
+
+        unset(CMAKE_REQUIRED_INCLUDES)
+        unset(CMAKE_REQUIRED_LIBRARIES)
+
+    else()
+
+        set(CMAKE_REQUIRED_INCLUDES ${Qt6Core_INCLUDE_DIRS} ${Qt6Gui_INCLUDE_DIRS} ${Qt6Widgets_INCLUDE_DIRS} ${Qt6OpenGLWidgets_INCLUDE_DIRS})
+        set(CMAKE_REQUIRED_LIBRARIES ${Qt6Core_LIBRARIES} ${Qt6Gui_LIBRARIES} ${Qt6Widgets_LIBRARIES} ${Qt6OpenGLWidgets_LIBRARIES})
+
+        CHECK_CXX_SOURCE_COMPILES("
+            #include <QOpenGLWidget>
+            #include <QColorSpace>
+            int main(int argc, char *argv[]) {
+                QOpenGLWidget *w = nullptr;
+                w->setTextureColorSpace(QColorSpace());
+            }
+            "
+            HAVE_HDR
+        )
+
+        unset(CMAKE_REQUIRED_INCLUDES)
+        unset(CMAKE_REQUIRED_LIBRARIES)
+
+    endif()
 endif()
 configure_file(config-hdr.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config-hdr.h)
+
+set(CMAKE_REQUIRED_INCLUDES ${Qt5Core_INCLUDE_DIRS} ${Qt5Gui_INCLUDE_DIRS} ${Qt5Widgets_INCLUDE_DIRS})
+set(CMAKE_REQUIRED_LIBRARIES ${Qt5Core_LIBRARIES} ${Qt5Gui_LIBRARIES} ${Qt5Widgets_LIBRARIES})
 
 CHECK_CXX_SOURCE_COMPILES("
 #include <QGuiApplication>
@@ -619,12 +788,6 @@ add_definitions(
   -DQT_USE_FAST_CONCATENATION 
   -DQT_USE_FAST_OPERATOR_PLUS
 )
-
-remove_definitions(
-    -DQT_NO_CAST_FROM_ASCII
-    -DQT_NO_FOREACH
-)
-
 
 # MSVC is unable to disambiguate between definitions of QVector<QPointF> 
 # and QPolygonF. This is a known upstream bug e.g.:
@@ -805,8 +968,8 @@ if (ANDROID)
         message (FATAL_ERROR "ANDROID_SDK_ROOT argument is not set")
     endif()
 
-    set (KRITA_PLUGIN_INSTALL_DIR ${LIB_INSTALL_DIR})
-    # set (DATA_INSTALL_DIR ${CMAKE_INSTALL_PREFIX}/assets)
+    set (KRITA_PLUGIN_INSTALL_DIR ${KDE_INSTALL_LIBDIR})
+    # set (KDE_INSTALL_DATADIR ${CMAKE_INSTALL_PREFIX}/assets)
 
     # From ECM
     # Because Qt changes library suffix (to include arch), this changes name of
@@ -814,7 +977,7 @@ if (ANDROID)
     # adapted for this.
     set(CMAKE_FIND_LIBRARY_SUFFIXES "_${CMAKE_ANDROID_ARCH_ABI}.so" ".so" ".a")
 else()
-    set (KRITA_PLUGIN_INSTALL_DIR ${LIB_INSTALL_DIR}/kritaplugins)
+    set (KRITA_PLUGIN_INSTALL_DIR ${KDE_INSTALL_LIBDIR}/kritaplugins)
 endif()
 
 
@@ -895,7 +1058,11 @@ set_package_properties(WebP PROPERTIES
 ##
 ## Test for KSeExpr
 ##
-find_package(KSeExpr 4.0.0.0)
+if (QT_MAJOR_VERSION STREQUAL "5")
+    find_package(KSeExpr 4.0.0.0)
+else()
+    find_package(KSeExpr 6.0.0.0)
+endif() 
 set_package_properties(KSeExpr PROPERTIES
     URL "https://invent.kde.org/graphics/kseexpr"
     TYPE OPTIONAL
@@ -1055,14 +1222,6 @@ if (Mlt7_FOUND)
     set_package_properties(SDL2 PROPERTIES DESCRIPTION "Simple DirectMedia Layer 2"
                 URL "https://www.libsdl.org/"
                 PURPOSE "Required for MLT to render audio buffers. Required **only** when MLT is found on the system." )
-
-  if (ANDROID)
-      # Get the first item in the CMAKE_FIND_ROOT_PATH, hopefully it will be where plugins are saved.
-      list(GET CMAKE_FIND_ROOT_PATH 0 FIRST_FIND_PATH)
-      # TODO(sh_zam): Hardcoded, apparently generators doesn't work for this purpose?
-      file(GLOB MLT_PLUGINS "${FIRST_FIND_PATH}/lib/mlt-7/*.so")
-      list(APPEND ANDROID_EXTRA_LIBS ${MLT_PLUGINS})
-  endif()
 endif()
 macro_bool_to_01(Mlt7_FOUND HAVE_MLT)
 configure_file(config-mlt.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config-mlt.h)
@@ -1136,7 +1295,11 @@ endif()
 ## write a version range in the find_package call. Instead we
 ## should try all the supported versions manually
 ##
-foreach(xsimd_version 8.1.0 9 10 11 12 13)
+## We're trying out more recent versions first to make
+## set_package_properties report the lowest one if no
+## xsimd is found
+##
+foreach(xsimd_version 13 12 11 10 9 8.1.0)
     if(NOT xsimd_FOUND)
         find_package(xsimd ${xsimd_version})
     endif()
@@ -1145,12 +1308,10 @@ endforeach()
 set_package_properties(xsimd PROPERTIES
     DESCRIPTION "C++ wrappers for SIMD intrinsics"
     URL "https://github.com/xtensor-stack/xsimd"
-    TYPE OPTIONAL
+    TYPE REQUIRED
     PURPOSE "Required by Krita for vectorization")
-macro_bool_to_01(xsimd_FOUND HAVE_XSIMD)
-configure_file(config-xsimd.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config-xsimd.h )
 
-if(HAVE_XSIMD)
+if (xsimd_FOUND)
     macro(ko_compile_for_all_implementations_no_scalar _objs _src)
         if("aarch64" IN_LIST XSIMD_ARCH)
             xsimd_compile_for_all_implementations(${_objs} ${_src} FLAGS ${xsimd_ARCHITECTURE_FLAGS} ONLY NEON64)
@@ -1169,6 +1330,14 @@ if(HAVE_XSIMD)
         xsimd_compile_for_all_implementations(${_objs} ${_src} FLAGS ${xsimd_ARCHITECTURE_FLAGS} ONLY Scalar)
         ko_compile_for_all_implementations_no_scalar(${_objs} ${_src})
     endmacro()
+else()
+    # Make noop functions as they are used in nested cmake files
+    # without guards
+    macro(ko_compile_for_all_implementations_no_scalar _objs _src)
+    endmacro()
+
+    macro(ko_compile_for_all_implementations _objs _src)
+    endmacro()
 endif()
 
 ##
@@ -1180,7 +1349,7 @@ test_big_endian(CMAKE_WORDS_BIGENDIAN)
 ##
 ## Test for qt-poppler
 ##
-find_package(Poppler COMPONENTS Qt5)
+find_package(Poppler COMPONENTS Qt${QT_MAJOR_VERSION})
 set_package_properties(Poppler PROPERTIES
     DESCRIPTION "A PDF rendering library"
     URL "https://poppler.freedesktop.org/"
@@ -1201,13 +1370,23 @@ set_package_properties(QUAZIP PROPERTIES
 ##
 ## Test for KDcraw
 ##
-find_package(KF5KDcraw 5.0.0)
-set_package_properties(KF5KDcraw PROPERTIES
-    DESCRIPTION "A thread-safe wrapper around libraw"
-    URL "https://api.kde.org/libkdcraw/html/index.html"
-    TYPE OPTIONAL
-    PURPOSE "Needed for reading RAW files"
-)
+if (QT_MAJOR_VERSION STREQUAL "6")
+    find_package(KDcrawQt6 5.0.0)
+    set_package_properties(KDcrawQt6 PROPERTIES
+        DESCRIPTION "A thread-safe wrapper around libraw"
+        URL "https://api.kde.org/libkdcraw/html/index.html"
+        TYPE OPTIONAL
+        PURPOSE "Needed for reading RAW files"
+    )
+else()
+    find_package(KF5KDcraw 5.0.0)
+    set_package_properties(KF5KDcraw PROPERTIES
+        DESCRIPTION "A thread-safe wrapper around libraw"
+        URL "https://api.kde.org/libkdcraw/html/index.html"
+        TYPE OPTIONAL
+        PURPOSE "Needed for reading RAW files"
+    )
+endif()
 
 ##
 ## Check for freetype
@@ -1307,6 +1486,7 @@ include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}
 add_subdirectory(sdk/tests)
 
 add_subdirectory(libs)
+add_subdirectory(qmlmodules)
 add_subdirectory(plugins)
 if (BUILD_TESTING)
     add_subdirectory(benchmarks)

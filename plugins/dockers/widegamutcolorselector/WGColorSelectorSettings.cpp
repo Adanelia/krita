@@ -17,9 +17,8 @@
 #include <QVBoxLayout>
 #include <QScreen>
 #include <QDialogButtonBox>
-#include <QStringList>
-#include <QToolButton>
 #include <QPushButton>
+#include <QToolButton>
 
 WGColorSelectorSettings::WGColorSelectorSettings(QWidget *parent)
     : KisPreferenceSet(parent)
@@ -49,11 +48,7 @@ WGColorSelectorSettings::WGColorSelectorSettings(QWidget *parent)
 
     m_shadeLineGroup->setExclusive(false);
     slotSetShadeLineCount(m_ui->sbShadeLineCount->value());
-#if QT_VERSION >= QT_VERSION_CHECK(5,15,0)
     connect(m_shadeLineGroup, SIGNAL(idClicked(int)), SLOT(slotShowLineEditor(int)));
-#else
-    connect(m_shadeLineGroup, SIGNAL(buttonClicked(int)), SLOT(slotShowLineEditor(int)));
-#endif
 }
 
 WGColorSelectorSettings::~WGColorSelectorSettings()
@@ -161,7 +156,7 @@ void WGColorSelectorSettings::loadPreferencesImpl(bool defaults)
     // General
     m_ui->grpQuickSettingsMenu->setChecked(cfg.get(WGConfig::quickSettingsEnabled, defaults));
     QVector<KisColorSelectorConfiguration> favoriteConfigs = cfg.favoriteConfigurations(defaults);
-    for (const KisColorSelectorConfiguration &fav : qAsConst(favoriteConfigs)) {
+    for (const KisColorSelectorConfiguration &fav : std::as_const(favoriteConfigs)) {
         m_favoriteConfigGrid->setChecked(fav);
     }
     m_ui->cmbSelectionColorSpace->setCurrentIndex(cfg.get(WGConfig::colorSpaceSource, defaults));

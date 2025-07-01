@@ -7,7 +7,7 @@
 #ifndef KISEXPORTCHECKREGISTRY_H
 #define KISEXPORTCHECKREGISTRY_H
 
-#include <QString>
+#include <QObject>
 
 #include <KoGenericRegistry.h>
 

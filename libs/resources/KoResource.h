@@ -9,7 +9,6 @@
 
 #include <QImage>
 #include <QString>
-#include <QHash>
 #include <QSharedPointer>
 #include <QDebug>
 
@@ -94,15 +93,6 @@ public:
      * set with setImage.
      */
     virtual void updateThumbnail();
-
-    /**
-     * Requests the resource to update its linked-resources
-     * metadata stored in metaData()["dependent_resources_filenames"].
-     *
-     * This request comes from KisResourceLocator every time a
-     * new version of the resource is added to the database.
-     */
-    virtual void updateLinkedResourcesMetaData(KisResourcesInterfaceSP resourcesInterface);
 
     /**
      * @brief thumbnail the thumbnail image to use in resource selectors

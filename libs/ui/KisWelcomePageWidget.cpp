@@ -9,13 +9,10 @@
 #include "KisWelcomePageWidget.h"
 #include "KisRecentDocumentsModelWrapper.h"
 #include <QDesktopServices>
-#include <QFileInfo>
 #include <QMimeData>
 #include <QPixmap>
-#include <QImage>
 #include <QMessageBox>
 #include <QTemporaryFile>
-#include <QByteArray>
 #include <QBuffer>
 #include <QNetworkAccessManager>
 #include <QEventLoop>
@@ -435,6 +432,7 @@ void KisWelcomePageWidget::slotUpdateThemeColors()
     if (KisMacosEntitlements().sandbox()) {
         supportKritaLink->hide();
         supportKritaIcon->hide();
+        labelSupportText->hide();
     }
 #endif
 }

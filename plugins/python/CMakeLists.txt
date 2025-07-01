@@ -20,17 +20,17 @@ function(install_pykrita_plugin name)
         message(FATAL_ERROR "Plugin filename is not given")
     endif()
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${name}.py)
-        install(FILES kritapykrita_${name}.desktop DESTINATION ${DATA_INSTALL_DIR}/krita/pykrita)
+        install(FILES kritapykrita_${name}.desktop DESTINATION ${KDE_INSTALL_DATADIR}/krita/pykrita)
         foreach(_f ${name}.py ${name}.ui ${install_pykrita_plugin_FILE})
             if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${_f})
-                install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${_f} DESTINATION ${DATA_INSTALL_DIR}/krita/pykrita)
+                install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/${_f} DESTINATION ${KDE_INSTALL_DATADIR}/krita/pykrita)
             endif()
         endforeach()
     elseif(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${name})
-        install(FILES ${name}/kritapykrita_${name}.desktop DESTINATION ${DATA_INSTALL_DIR}/krita/pykrita)
+        install(FILES ${name}/kritapykrita_${name}.desktop DESTINATION ${KDE_INSTALL_DATADIR}/krita/pykrita)
         install(
             DIRECTORY ${name}
-            DESTINATION ${DATA_INSTALL_DIR}/krita/pykrita
+            DESTINATION ${KDE_INSTALL_DATADIR}/krita/pykrita
             FILES_MATCHING
                 PATTERN "*.py"
                 PATTERN "*.ui"
@@ -46,7 +46,7 @@ function(install_pykrita_plugin name)
         foreach(_pattern ${install_pykrita_plugin_PATTERNS})
             install(
                 DIRECTORY ${name}
-                DESTINATION ${DATA_INSTALL_DIR}/krita/pykrita
+                DESTINATION ${KDE_INSTALL_DATADIR}/krita/pykrita
                 FILES_MATCHING
                     PATTERN "${_pattern}"
                     PATTERN "__pycache__*" EXCLUDE
@@ -68,7 +68,7 @@ install_pykrita_plugin(batch_exporter)
 #install_pykrita_plugin(highpass)
 install_pykrita_plugin(tenbrushes)
 install_pykrita_plugin(tenscripts)
-#install_pykrita_plugin(palette_docker)  # Needs fixing -> bug 405194
+install_pykrita_plugin(palette_docker)
 install_pykrita_plugin(quick_settings_docker)
 install_pykrita_plugin(lastdocumentsdocker)
 # install_pykrita_plugin(scriptdocker)
@@ -76,6 +76,7 @@ install_pykrita_plugin(comics_project_management_tools)
 install_pykrita_plugin(krita_script_starter)
 install_pykrita_plugin(plugin_importer)
 install_pykrita_plugin(mixer_slider_docker)
+install_pykrita_plugin(mutator)
 install_pykrita_plugin(channels2layers)
 install_pykrita_plugin(photobash_images)
 install_pykrita_plugin(workflow_buttons)
@@ -90,11 +91,12 @@ install( FILES
     tenbrushes/tenbrushes.action
     tenscripts/tenscripts.action
     plugin_importer/plugin_importer.action
-DESTINATION  ${DATA_INSTALL_DIR}/krita/actions)
+    mutator/mutator.action
+DESTINATION  ${KDE_INSTALL_DATADIR}/krita/actions)
 
 install(
     DIRECTORY libkritapykrita
-    DESTINATION ${DATA_INSTALL_DIR}/krita/pykrita
+    DESTINATION ${KDE_INSTALL_DATADIR}/krita/pykrita
     FILES_MATCHING
         PATTERN "*.py"
         PATTERN "__pycache__*" EXCLUDE

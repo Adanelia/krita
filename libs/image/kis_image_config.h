@@ -96,8 +96,15 @@ public:
     int defaultFrameColorLabel() const;
     void setDefaultFrameColorLabel(int label);
 
-    KisProofingConfigurationSP defaultProofingconfiguration();
-    void setDefaultProofingConfig(const KoColorSpace *proofingSpace, int proofingIntent, bool blackPointCompensation, KoColor warningColor, double adaptationState);
+    KisProofingConfigurationSP defaultProofingconfiguration(bool requestDefault = false);
+    void setDefaultProofingConfig(const KoColorSpace *proofingSpace,
+                                  int renderingIntent,
+                                  bool blackPointCompensation,
+                                  KoColor warningColor,
+                                  double adaptationState,
+                                  bool displayBlackPointCompensation,
+                                  int proofingIntent,
+                                  KisProofingConfiguration::DisplayTransformState proofingDisplayMode);
 
     bool useLodForColorizeMask(bool requestDefault = false) const;
     void setUseLodForColorizeMask(bool value);
@@ -113,6 +120,9 @@ public:
 
     int fpsLimit(bool defaultValue = false) const;
     void setFpsLimit(int value);
+
+    bool detectFpsLimit(bool defaultValue = false) const;
+    void setDetectFpsLimit(bool value);
 
     bool useOnDiskAnimationCacheSwapping(bool defaultValue = false) const;
     void setUseOnDiskAnimationCacheSwapping(bool value);
@@ -145,6 +155,8 @@ public:
 
     bool renameMergedLayers(bool defaultValue = false) const;
     void setRenameMergedLayers(bool value);
+    bool renameDuplicatedLayers(bool defaultValue = false) const;
+    void setRenameDuplicatedLayers(bool value);
 
     template<class T>
     void writeEntry(const QString& name, const T& value) {

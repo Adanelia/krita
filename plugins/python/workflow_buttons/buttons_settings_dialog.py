@@ -3,21 +3,29 @@
 #   Timothée Giet <animtim@gmail.com>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from PyQt5.QtCore import QSize
-from PyQt5.QtGui import QIcon, QPixmap, QColor, QPen, QBrush, QPainter, QImageReader
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QWidget, QScrollArea, QPushButton,
-                             QToolButton, QLabel, QLineEdit, QComboBox, QDialogButtonBox,
-                             QFileDialog, QFrame, QWidget, QSizePolicy)
-from krita import Krita, PresetChooser, ManagedColor
+try:
+    from PyQt6.QtCore import QSize, Qt
+    from PyQt6.QtGui import QIcon, QPixmap, QColor, QPen, QBrush, QPainter
+    from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QWidget, QScrollArea, QPushButton,
+                                 QToolButton, QLabel, QLineEdit, QComboBox, QDialogButtonBox,
+                                 QFrame, QWidget, QSizePolicy)
+except:
+    from PyQt5.QtCore import QSize, Qt
+    from PyQt5.QtGui import QIcon, QPixmap, QColor, QPen, QBrush, QPainter
+    from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QWidget, QScrollArea, QPushButton,
+                                 QToolButton, QLabel, QLineEdit, QComboBox, QDialogButtonBox,
+                                  QFrame, QWidget, QSizePolicy)
+from krita import Krita, PresetChooser, ManagedColor, FileDialog
 from .flow_layout import FlowLayout
 import copy
+from builtins import i18n
 
 INSTANCE = Krita.instance()
 
 LISTOFTOOLS = [
     { "toolName": "", "toolIcon": "", "toolString": "" },
     { "toolName": "InteractionTool", "toolIcon": "select", "toolString": "Select Shapes Tool" },
-    { "toolName": "SvgTextToo", "toolIcon": "draw-text", "toolString": "Text Tool" },
+    { "toolName": "SvgTextTool", "toolIcon": "draw-text", "toolString": "Text Tool" },
     { "toolName": "PathTool", "toolIcon": "shape_handling", "toolString": "Edit Shapes Tool" },
     { "toolName": "KarbonCalligraphyTool", "toolIcon": "calligraphy", "toolString": "Calligraphy" },
     { "toolName": "KritaShape/KisToolBrush", "toolIcon": "krita_tool_freehand", "toolString": "Freehand Brush Tool" },
@@ -99,7 +107,7 @@ class ButtonsSettingsDialog(QDialog):
         layoutForSelectorControls.addWidget(self.selectedButtonIDLabel)
 
         spacer1 = QWidget(self)
-        spacer1.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        spacer1.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layoutForSelectorControls.addWidget(spacer1)
 
         # button to add a custom button
@@ -143,7 +151,7 @@ class ButtonsSettingsDialog(QDialog):
         layoutForIconMode.addWidget(self.iconModeSelector)
 
         spacer2 = QWidget(self)
-        spacer2.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        spacer2.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layoutForIconMode.addWidget(spacer2)
 
         mainLayout.addLayout(layoutForIconMode)
@@ -186,7 +194,7 @@ class ButtonsSettingsDialog(QDialog):
         layoutForToolSelector.addWidget(self.toolSelector)
 
         spacer3 = QWidget(self)
-        spacer3.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        spacer3.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layoutForToolSelector.addWidget(spacer3)
 
         mainLayout.addLayout(layoutForToolSelector)
@@ -219,7 +227,7 @@ class ButtonsSettingsDialog(QDialog):
         layoutForFGColorInput.addWidget(FGColorClear)
 
         spacer4 = QWidget(self)
-        spacer4.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        spacer4.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layoutForFGColorInput.addWidget(spacer4)
 
         mainLayout.addLayout(layoutForFGColorInput)
@@ -234,7 +242,7 @@ class ButtonsSettingsDialog(QDialog):
         layoutForFGColorInfo.addWidget(self.FGColorInfoLabel)
 
         spacer5 = QWidget(self)
-        spacer5.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        spacer5.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layoutForFGColorInfo.addWidget(spacer5)
 
         mainLayout.addLayout(layoutForFGColorInfo)
@@ -251,7 +259,7 @@ class ButtonsSettingsDialog(QDialog):
         layoutForBGColorInput.addWidget(BGColorClear)
 
         spacer6 = QWidget(self)
-        spacer6.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        spacer6.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layoutForBGColorInput.addWidget(spacer6)
 
         mainLayout.addLayout(layoutForBGColorInput)
@@ -264,7 +272,7 @@ class ButtonsSettingsDialog(QDialog):
         layoutForBGColorInfo.addWidget(self.BGColorInfoLabel)
 
         spacer7 = QWidget(self)
-        spacer7.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        spacer7.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layoutForBGColorInfo.addWidget(spacer7)
 
         mainLayout.addLayout(layoutForBGColorInfo)
@@ -288,8 +296,8 @@ class ButtonsSettingsDialog(QDialog):
 
         # spacer for global controls
         spacerLine = QFrame(self)
-        spacerLine.setFrameShape(QFrame.HLine)
-        spacerLine.setFrameShadow(QFrame.Sunken)
+        spacerLine.setFrameShape(QFrame.Shape.HLine)
+        spacerLine.setFrameShadow(QFrame.Shadow.Sunken)
         mainLayout.addWidget(spacerLine)
 
         # button's size selector
@@ -303,7 +311,7 @@ class ButtonsSettingsDialog(QDialog):
         layoutForButtonsSize.addWidget(self.buttonsSizeSelector)
 
         spacer8 = QWidget(self)
-        spacer8.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        spacer8.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layoutForButtonsSize.addWidget(spacer8)
 
         mainLayout.addLayout(layoutForButtonsSize)
@@ -320,7 +328,7 @@ class ButtonsSettingsDialog(QDialog):
         layoutForSettingsButtonOption.addWidget(self.settingsButtonPositionSelector)
 
         spacer9 = QWidget(self)
-        spacer9.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        spacer9.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layoutForSettingsButtonOption.addWidget(spacer9)
 
         mainLayout.addLayout(layoutForSettingsButtonOption)
@@ -328,7 +336,7 @@ class ButtonsSettingsDialog(QDialog):
         # main dialog's default buttons
         layoutForBottom = QHBoxLayout()
         buttonBox = QDialogButtonBox(self)
-        buttonBox.setStandardButtons( QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttonBox.setStandardButtons( QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttonBox.accepted.connect(self.accept)
         buttonBox.rejected.connect(self.reject)
         layoutForBottom.addWidget(buttonBox)
@@ -444,16 +452,11 @@ class ButtonsSettingsDialog(QDialog):
         # print("select icon dialog started")
         if self.selectedButtonID < 1:
             return
-        dialog = QFileDialog(self)
-        formatList = []
-        for formatBytes in QImageReader.supportedImageFormats():
-            formatList.append(f"*.{str(formatBytes, 'utf-8')}")
-        formatsString = " ".join(formatList)
-        # The format string cannot be translated, only the description
-        dialog.setNameFilter(i18n("Icon files ") + "(" + formatsString + ")")
 
-        if dialog.exec_():
-            selectedFile = dialog.selectedFiles()[0]
+        dialog = FileDialog(self)
+        dialog.setImageFilters() # all supported image formats
+        selectedFile = dialog.filename()
+        if selectedFile:
             self.iconPathInput.setText(selectedFile)
             self.iconPathChanged()
 
@@ -487,12 +490,12 @@ class ButtonsSettingsDialog(QDialog):
         presetChooser = PresetChooser(dialog)
         dialogLayout.addWidget(presetChooser)
         buttonBox = QDialogButtonBox(dialog)
-        buttonBox.setStandardButtons( QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttonBox.setStandardButtons( QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttonBox.accepted.connect(dialog.accept)
         buttonBox.rejected.connect(dialog.reject)
         dialogLayout.addWidget(buttonBox)
 
-        dialog.exec_()
+        dialog.exec()
         if dialog.result() == 1 and presetChooser.currentPreset():
             self.presetSelectorInput.setText(presetChooser.currentPreset().name())
             self.presetChanged()
@@ -575,11 +578,11 @@ class ButtonsSettingsDialog(QDialog):
         # print("select script dialog started")
         if self.selectedButtonID < 1:
             return
-        dialog = QFileDialog(self)
+        dialog = FileDialog(self)
         dialog.setNameFilter(i18n("Script files ") + "(*.py)")
+        selectedFile = dialog.filename()
 
-        if dialog.exec_():
-            selectedFile = dialog.selectedFiles()[0]
+        if selectedFile:
             self.scriptPathInput.setText(selectedFile)
             self.scriptPathChanged()
 
@@ -673,8 +676,8 @@ class selectedButtonHighlight(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setPen(QPen(self.colorPen, 4, 1)) # last 1 is for Qt.SolidLine
-        painter.setBrush(QBrush(self.colorBrush, 1)) # last 1 is for Qt.SolidPattern
+        painter.setPen(QPen(self.colorPen, 4, Qt.PenStyle.SolidLine))
+        painter.setBrush(QBrush(self.colorBrush, Qt.BrushStyle.SolidPattern))
         painter.drawRect(2, 2, self.minimumSize().width() - 3, self.minimumSize().height() - 4)
 
 
@@ -692,8 +695,8 @@ class SelectedColorPreview(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setPen(QPen(self.outlineColor, 1, 1)) # last 1 is for Qt.SolidLine
-        painter.setBrush(QBrush(self.color, 1)) # last 1 is for Qt.SolidPattern
+        painter.setPen(QPen(self.outlineColor, 1, Qt.PenStyle.SolidLine))
+        painter.setBrush(QBrush(self.color, Qt.BrushStyle.SolidPattern))
         painter.drawRect(1, 1, 30, 30)
 
     def convertColorInfoToQColor(self):

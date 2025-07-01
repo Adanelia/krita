@@ -30,7 +30,7 @@ public:
 
 public:
     KisClickableGLImageWidget(QWidget *parent = nullptr);
-    KisClickableGLImageWidget(KisSurfaceColorSpace colorSpace,
+    KisClickableGLImageWidget(const KisSurfaceColorSpaceWrapper &colorSpace,
                               QWidget *parent = nullptr);
     ~KisClickableGLImageWidget();
 

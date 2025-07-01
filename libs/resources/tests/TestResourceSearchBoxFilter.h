@@ -8,7 +8,6 @@
 #define TEST_RESOURCE_SEARCH_BOX_FILTER_H
 
 #include <QObject>
-#include <QScopedPointer>
 
 #include <KisResourceSearchBoxFilter.h>
 
@@ -21,7 +20,7 @@ struct MockResource {
 
     ~MockResource(){}
 
-    bool operator==(const MockResource& rhs){
+    bool operator==(const MockResource& rhs) const {
         return (m_name == rhs.m_name) && (m_tags == rhs.m_tags);
     }
 

@@ -9,10 +9,10 @@
 
 #include <QMimeData>
 #include <QUrl>
-#include <QTimer>
 #include <QApplication>
 #include <QTouchEvent>
 #include <QClipboard>
+#include <QEvent>
 
 #include <kundo2command.h>
 #include <KoProperties.h>
@@ -197,7 +197,8 @@ void KoToolProxy::tabletEvent(QTabletEvent *event, const QPointF &point)
     // We get these events exclusively from KisToolProxy - accept them
     event->accept();
 
-    KoInputDevice id(event->deviceType(), event->pointerType(), event->uniqueId());
+    KoInputDevice id(KoInputDevice::convertDeviceType(event),
+                     KoInputDevice::convertPointerType(event), event->uniqueId());
     KoToolManager::instance()->priv()->switchInputDevice(id);
 
     KoPointerEvent ev(event, point);

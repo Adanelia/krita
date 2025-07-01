@@ -22,6 +22,7 @@ TextPropertyBase {
         flow: GridLayout.LeftToRight
         columns: 2;
         columnSpacing: root.columnSpacing;
+        width: parent.width;
 
         Item {
             Layout.preferredHeight: firstColumnWidth;
@@ -41,28 +42,19 @@ TextPropertyBase {
                 anchors.verticalCenter: parent.verticalCenter;
             }
         }
-
-
-        RowLayout {
+        Item {
             id: titleItemContainer;
             Layout.fillWidth: true;
-            spacing: columnSpacing;
-            Label {
-                id: propertyTitle;
-                text: root.propertyName;
-                height: parent.height;
-                verticalAlignment: Text.AlignVCenter
-                color: sysPalette.text;
-                elide: Text.ElideRight;
-                Layout.fillWidth: true;
-
-            }
+            implicitHeight: childrenRect.height;
+            height: implicitHeight;
         }
     }
 
     Item {
         id: contentItemContainer;
         width: parent.width;
-        height: visible? childrenRect.height: 0;
+        implicitHeight: childrenRect.height;
+        height: visible? implicitHeight: 0;
+        visible: false;
     }
 }

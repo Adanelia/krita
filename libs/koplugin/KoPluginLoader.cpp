@@ -1,3 +1,4 @@
+
 /*
  * SPDX-FileCopyrightText: 2006-2016 Boudewijn Rempt <boud@valdyas.org>
  *
@@ -19,6 +20,42 @@
 #include <KSharedConfig>
 #include <KConfigGroup>
 #include <KPluginFactory>
+
+namespace
+{
+int versionFromPlugin(const KoJsonTrader::Plugin &plugin)
+{
+    QJsonObject json = plugin.metaData().value("MetaData").toObject();
+    QVariant version = json.value("X-Krita-Version");
+    return version.toString().toInt();
+};
+
+QString idFromPlugin(const KoJsonTrader::Plugin &plugin)
+{
+    QJsonObject json = plugin.metaData().value("MetaData").toObject();
+    return json.value("Id").toString();
+};
+
+bool versionCompareLess(const KoJsonTrader::Plugin &lhs, const KoJsonTrader::Plugin &rhs)
+{
+    return versionFromPlugin(lhs) < versionFromPlugin(rhs);
+};
+
+bool idCompareEqual(const KoJsonTrader::Plugin &lhs, const KoJsonTrader::Plugin &rhs)
+{
+    return idFromPlugin(lhs) == idFromPlugin(rhs);
+};
+
+bool sortByIdAndReversedVersion(const KoJsonTrader::Plugin &lhs, const KoJsonTrader::Plugin &rhs)
+{
+    const QString lhsId = idFromPlugin(lhs);
+    const QString rhsId = idFromPlugin(rhs);
+    return lhsId < rhsId ||
+        (lhsId == rhsId && versionCompareLess(rhs, lhs));
+};
+
+} // namespace
+
 
 class Q_DECL_HIDDEN KoPluginLoader::Private
 {
@@ -43,107 +80,113 @@ KoPluginLoader* KoPluginLoader::instance()
     return pluginLoaderInstance();
 }
 
-void KoPluginLoader::load(const QString & serviceType, const QString & versionString, const PluginsConfig &config, QObject* owner, bool cache)
+void KoPluginLoader::load(const QString & serviceType, const PluginsConfig &config, QObject* owner, bool cache)
 {
-
     // Don't load the same plugins again
     if (cache && d->loadedServiceTypes.contains(serviceType)) {
         return;
     }
     d->loadedServiceTypes << serviceType;
-    QString query = QString::fromLatin1("(Type == 'Service')");
-    if (!versionString.isEmpty()) {
-        query += QString::fromLatin1(" and (%1)").arg(versionString);
+
+    QList<KoJsonTrader::Plugin> plugins = KoJsonTrader::instance()->query(serviceType, QString());
+
+    {
+        /**
+         * First, remove all the duplicated plugins and keep only the ones with
+         * the highest version number
+         */
+        std::sort(plugins.begin(), plugins.end(), &sortByIdAndReversedVersion);
+        auto it = plugins.begin();
+        while ((it = std::adjacent_find(it, plugins.end(), &idCompareEqual)) != plugins.end()) {
+            warnPlugins << "Skipping duplicated plugin, id:" << idFromPlugin(*it)
+                        << "version:" << versionFromPlugin(*it) << "filename:" << it->fileName();
+            /**
+             * Erasing an element in QList in Qt5 may invalidate the existing
+             * iterator, so we should derive the new position from the iterator
+             * returned by erase() method
+             */
+            it = std::prev(plugins.erase(std::next(it)));
+        }
     }
 
-    QList<KoJsonTrader::Plugin> offers = KoJsonTrader::instance()->query(serviceType, QString());
-
-    QList<KoJsonTrader::Plugin> plugins;
-
-    bool configChanged = false;
-    QList<QString> blacklist; // what we will save out afterwards
-    if (config.whiteList && config.blacklist && config.group) {
-        dbgPlugins << "Loading" << serviceType << "with checking the config";
+    if (config.isValid()) {
+        /**
+         * Then remove all the blacklisted plugins if necessary
+         */
         KConfigGroup configGroup(KSharedConfig::openConfig(), config.group);
-        QList<QString> whiteList = configGroup.readEntry(config.whiteList, config.defaults);
-        QList<QString> knownList;
+        QStringList blackList = configGroup.readEntry(config.blacklist, QStringList());
 
-        // if there was no list of defaults; all plugins are loaded.
-        const bool firstStart = !config.defaults.isEmpty() && !configGroup.hasKey(config.whiteList);
-        knownList = configGroup.readEntry(config.blacklist, knownList);
-        if (firstStart) {
-            configChanged = true;
-        }
-        Q_FOREACH (const KoJsonTrader::Plugin &loader, offers) {
-            QJsonObject json = loader.metaData().value("MetaData").toObject();
-            if (json.contains("KPlugin")) {
-                json = json.value("KPlugin").toObject();
-            }
-            const QString pluginName = json.value("Id").toString();
-            if (pluginName.isEmpty()) {
-                qWarning() << "Loading plugin" << loader.fileName() << "failed, has no X-KDE-PluginInfo-Name.";
-                continue;
-            }
-
-            if (whiteList.contains(pluginName)) {
-                plugins.append(loader);
-            }
-            else if (!firstStart && !knownList.contains(pluginName)) { // also load newly installed plugins.
-                plugins.append(loader);
-                configChanged = true;
-            }
-            else {
-                blacklist << pluginName;
+        auto it = plugins.begin();
+        while (it != plugins.end()) {
+            if (blackList.contains(idFromPlugin(*it))) {
+                it = plugins.erase(it);
+            } else {
+                ++it;
             }
         }
-    } else {
-        plugins = offers;
     }
 
-    QMap<QString, KoJsonTrader::Plugin> serviceNames;
-    Q_FOREACH (const KoJsonTrader::Plugin &loader, plugins) {
-        if (serviceNames.contains(loader.fileName())) { // duplicate
-            QJsonObject json2 = loader.metaData().value("MetaData").toObject();
-            QVariant pluginVersion2 = json2.value("X-Flake-PluginVersion").toVariant();
-            if (pluginVersion2.isNull()) { // just take the first one found...
-                continue;
-            }
-            KoJsonTrader::Plugin currentLoader = serviceNames.value(loader.fileName());
-            QJsonObject json = currentLoader.metaData().value("MetaData").toObject();
-            QVariant pluginVersion = json.value("X-Flake-PluginVersion").toVariant();
-            if (!(pluginVersion.isNull() || pluginVersion.toInt() < pluginVersion2.toInt())) {
-                continue; // replace the old one with this one, since its newer.
-            }
-        }
-        serviceNames.insert(loader.fileName(), loader);
-    }
+    /**
+     * Now "load" all the plugins. If "owner" object is not provided, we just
+     * create the plugin object and immediately destroy it. Usually the constructor
+     * of this plugin will just populate some registry, so the object is not necessary
+     * anymore.
+     */
+    for (KoJsonTrader::Plugin &plugin : plugins) {
+        const QString pluginName = idFromPlugin(plugin);
+        dbgPlugins << "loading" << pluginName;
 
-    QList<QString> whiteList;
-    Q_FOREACH (const QString &serviceName, serviceNames.keys()) {
-        dbgPlugins << "loading" << serviceName;
-        KoJsonTrader::Plugin loader = serviceNames[serviceName];
-        KPluginFactory *factory = qobject_cast<KPluginFactory *>(loader.instance());
-        QObject *plugin = 0;
+        QObject *object = 0;
+
+        KPluginFactory *factory = qobject_cast<KPluginFactory *>(plugin.instance());
         if (factory) {
-            plugin = factory->create<QObject>(owner ? owner : this, QVariantList());
+            object = factory->create<QObject>(owner ? owner : this, QVariantList());
         }
-        if (plugin) {
-            QJsonObject json = loader.metaData().value("MetaData").toObject();
-            json = json.value("KPlugin").toObject();
-            const QString pluginName = json.value("Id").toString();
-            whiteList << pluginName;
-            dbgPlugins << "\tLoaded plugin" << loader.fileName() << owner;
+
+        if (object) {
+            dbgPlugins << "\tLoaded plugin" << plugin.fileName() << "owner:" << owner;
             if (!owner) {
-                delete plugin;
+                delete object;
             }
         } else {
-            qWarning() << "Loading plugin" << loader.fileName() << "failed, " << loader.errorString();
+            qWarning() << "\tLoading plugin" << plugin.fileName() << "failed, " << plugin.errorString();
         }
     }
+}
 
-    if (configChanged && config.whiteList && config.blacklist && config.group) {
-        KConfigGroup configGroup(KSharedConfig::openConfig(), config.group);
-        configGroup.writeEntry(config.whiteList, whiteList);
-        configGroup.writeEntry(config.blacklist, blacklist);
+KPluginFactory* KoPluginLoader::loadSinglePlugin(const std::vector<std::pair<QString, QString>> &predicates, const QString &serviceType)
+{
+    QList<KoJsonTrader::Plugin> offers = KoJsonTrader::instance()->query(serviceType, QString());
+
+    offers.erase(std::remove_if(offers.begin(),
+                                offers.end(),
+                                [&](const KoJsonTrader::Plugin &plugin) {
+                                    QJsonObject json = plugin.metaData().value("MetaData").toObject();
+                                    Q_FOREACH(const auto &predicate, predicates) {
+                                        if (json.value(predicate.first).toString() != predicate.second) {
+                                            return true;
+                                        }
+                                    }
+                                    return false;
+                                }),
+                 offers.end());
+
+    auto it = std::max_element(offers.begin(), offers.end(), versionCompareLess);
+
+    if (it != offers.end()) {
+        KPluginFactory *factory = qobject_cast<KPluginFactory *>(it->instance());
+        return factory;
     }
+
+    return nullptr;
+}
+
+KPluginFactory* KoPluginLoader::loadSinglePlugin(const std::pair<QString, QString> &predicates, const QString & serviceType)
+{
+    return loadSinglePlugin(std::vector<std::pair<QString, QString>>{predicates}, serviceType);
+}
+
+KPluginFactory* KoPluginLoader::loadSinglePlugin(const QString &id, const QString &serviceType)
+{
+    return loadSinglePlugin({"Id", id}, serviceType);
 }

@@ -11,7 +11,6 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QButtonGroup>
-#include <QLabel>
 #include <QSizePolicy>
 #include <QBitmap>
 #include <QAction>
@@ -276,9 +275,9 @@ KoFillConfigWidget::KoFillConfigWidget(KoCanvasBase *canvas, KoFlake::FillVarian
 
     connect(d->ui->btnChooseSolidColor, SIGNAL(iconSizeChanged()), d->colorAction, SLOT(updateIcon()));
 
-    connect(d->group, SIGNAL(buttonClicked(int)), SLOT(styleButtonPressed(int)));
+    connect(d->group, SIGNAL(idClicked(int)), SLOT(styleButtonPressed(int)));
 
-    connect(d->group, SIGNAL(buttonClicked(int)), SLOT(slotUpdateFillTitle()));
+    connect(d->group, SIGNAL(idClicked(int)), SLOT(slotUpdateFillTitle()));
 
     slotUpdateFillTitle();
     styleButtonPressed(d->group->checkedId());

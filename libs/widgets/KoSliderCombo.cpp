@@ -6,7 +6,6 @@
 #include "KoSliderCombo.h"
 #include "KoSliderCombo_p.h"
 
-#include <QTimer>
 #include <QApplication>
 #include <QSize>
 #include <QSlider>
@@ -16,8 +15,6 @@
 #include <QLineEdit>
 #include <QValidator>
 #include <QHBoxLayout>
-#include <QFrame>
-#include <QMenu>
 #include <QMouseEvent>
 #include <QDoubleSpinBox>
 #include <QScreen>
@@ -79,11 +76,7 @@ QSize KoSliderCombo::minimumSizeHint() const
     QSize sh;
 
     const QFontMetrics &fm = fontMetrics();
-#if QT_VERSION >= QT_VERSION_CHECK(5,11,0)
     sh.setWidth(5 * fm.horizontalAdvance(QLatin1Char('8')));
-#else
-    sh.setWidth(5 * fm.width(QLatin1Char('8')));
-#endif
     sh.setHeight(qMax(fm.lineSpacing(), 14) + 2);
 
     // add style and strut values
@@ -119,7 +112,8 @@ void KoSliderCombo::KoSliderComboPrivate::showPopup()
     QRect popupRect(thePublic->mapToGlobal(QPoint(arrowPos - hdlPos - slider->x(), thePublic->size().height())), popSize);
 
     // Make sure the popup is not drawn outside the screen area
-    QRect screenRect = QApplication::desktop()->availableGeometry(thePublic);
+    QRect screenRect = thePublic->screen()->availableGeometry();
+
     if (popupRect.right() > screenRect.right())
         popupRect.translate(screenRect.right() - popupRect.right(), 0);
     if (popupRect.left() < screenRect.left())

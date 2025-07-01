@@ -217,6 +217,16 @@ void KoCanvasResourceProvider::removeDerivedResourceConverter(int key)
     d->manager.removeDerivedResourceConverter(key);
 }
 
+bool KoCanvasResourceProvider::hasAbstractResource(int key)
+{
+    return d->manager.hasAbstractResource(key);
+}
+
+void KoCanvasResourceProvider::removeAbstractResource(int key)
+{
+    d->manager.removeAbstractResource(key);
+}
+
 void KoCanvasResourceProvider::addResourceUpdateMediator(KoResourceUpdateMediatorSP mediator)
 {
     d->manager.addResourceUpdateMediator(mediator);
@@ -245,6 +255,11 @@ bool KoCanvasResourceProvider::hasActiveCanvasResourceDependency(int sourceKey, 
 void KoCanvasResourceProvider::removeActiveCanvasResourceDependency(int sourceKey, int targetKey)
 {
     d->manager.removeActiveCanvasResourceDependency(sourceKey, targetKey);
+}
+
+void KoCanvasResourceProvider::setAbstractResource(KoAbstractCanvasResourceInterfaceSP abstractResource)
+{
+    d->manager.setAbstractResource(abstractResource);
 }
 
 KoCanvasResourcesInterfaceSP KoCanvasResourceProvider::canvasResourcesInterface() const

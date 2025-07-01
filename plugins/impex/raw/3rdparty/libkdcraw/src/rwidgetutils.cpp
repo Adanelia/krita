@@ -35,12 +35,10 @@
 #include <QVBoxLayout>
 #include <QApplication>
 #include <QScreen>
-#include <QDesktopWidget>
 #include <QPushButton>
 #include <QFileInfo>
 #include <QPainter>
 #include <QStandardPaths>
-#include <QVector>
 #include <QColorDialog>
 #include <QStyleOptionButton>
 #include <qdrawutil.h>
@@ -257,7 +255,6 @@ QSize RAdjustableLabel::minimumSizeHint() const
 QSize RAdjustableLabel::sizeHint() const
 {
     QFontMetrics fm(fontMetrics());
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 10, 0))
     QRect geom = geometry();
     QPoint p(geom.width() / 2 + geom.left(), geom.height() / 2 + geom.top());
     QScreen *s = qApp->screenAt(p);
@@ -268,15 +265,7 @@ QSize RAdjustableLabel::sizeHint() const
     else {
         maxW = 1024;
     }
-#else
-    int maxW = QApplication::desktop()->screenGeometry(this).width() * 3 / 4;
-#endif
-
-#if QT_VERSION >= QT_VERSION_CHECK(5,11,0)
     int currentW = fm.horizontalAdvance(d->ajdText);
-#else
-    int currentW = fm.width(d->ajdText);
-#endif
 
     return (QSize(currentW > maxW ? maxW : currentW, QLabel::sizeHint().height()));
 }
@@ -318,11 +307,7 @@ void RAdjustableLabel::adjustTextToLabel()
 
     Q_FOREACH(const QString& line, d->ajdText.split(QLatin1Char('\n')))
     {
-#if QT_VERSION >= QT_VERSION_CHECK(5,11,0)
         int lineW = fm.horizontalAdvance(line);
-#else
-        int lineW = fm.width(line);
-#endif
         if (lineW > lblW)
         {
             adjusted = true;
@@ -628,7 +613,7 @@ void RColorSelector::paintEvent(QPaintEvent*)
     {
         QRect focusRect = style->subElementRect(QStyle::SE_PushButtonFocusRect, &opt, this);
         QStyleOptionFocusRect focusOpt;
-        focusOpt.init(this);
+        focusOpt.initFrom(this);
         focusOpt.rect            = focusRect;
         focusOpt.backgroundColor = palette().window().color();
         style->drawPrimitive(QStyle::PE_FrameFocusRect, &focusOpt, &painter, this);

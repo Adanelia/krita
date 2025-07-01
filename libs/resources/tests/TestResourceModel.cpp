@@ -13,7 +13,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QTemporaryFile>
-#include <QtSql>
+#include <QAbstractItemModelTester>
 
 #include <kconfig.h>
 #include <kconfiggroup.h>
@@ -156,7 +156,7 @@ void TestResourceModel::testImportResourceFile()
     f.close();
 
     int resourceCount = resourceModel.rowCount();
-    bool r = resourceModel.importResourceFile(f.fileName(), false);
+    bool r = bool(resourceModel.importResourceFile(f.fileName(), false));
     QVERIFY(r);
     QCOMPARE(resourceModel.rowCount(), resourceCount + 1);
 }

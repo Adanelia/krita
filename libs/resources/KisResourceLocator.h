@@ -119,6 +119,9 @@ public:
      */
     QString filePathForResource(KoResourceSP resource);
 
+    /// This updates the "fontregistry" storage. Called when the font directories change;
+    void updateFontStorage();
+
 Q_SIGNALS:
 
     void progressMessage(const QString&);
@@ -143,6 +146,18 @@ Q_SIGNALS:
 
     /// Emitted when a resource changes its active state
     void resourceActiveStateChanged(const QString &resourceType, int resourceId);
+
+    /// Emitted when a storage is resynchronized using KisresourceCacheDb::synchronizeStorage()
+    ///
+    /// if \p isBulkResynchronization then this resynchronization happened as a part
+    /// of bulk resynchronization at the start of Krita. At the end of this bulk
+    /// action storagesBulkSynchronizationFinished() will be emitted as well.
+    void storageResynchronized(const QString &storage, bool isBulkResynchronization);
+
+    /// Emitted when bulk-synchronization of all the storages has been finished
+    ///
+    /// \see storageResynchronized
+    void storagesBulkSynchronizationFinished();
 
 private:
 
@@ -321,9 +336,6 @@ private:
 
     LocatorError firstTimeInstallation(InitializationStatus initializationStatus, const QString &installationResourcesLocation);
 
-    // First time installation
-    bool initializeDb();
-
     // Synchronize on restarting Krita to see whether the user has added any storages or resources to the resources location
     bool synchronizeDb();
 
@@ -333,6 +345,7 @@ private:
     KisResourceStorageSP storageByLocation(const QString &location) const;
     KisResourceStorageSP folderStorage() const;
     KisResourceStorageSP memoryStorage() const;
+    KisResourceStorageSP fontStorage() const;
 
     struct ResourceStorage {
         QString storageLocation;

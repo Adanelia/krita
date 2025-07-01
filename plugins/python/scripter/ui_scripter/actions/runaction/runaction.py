@@ -3,23 +3,23 @@ SPDX-FileCopyrightText: 2017 Eliakin Costa <eliakim170@gmail.com>
 
 SPDX-License-Identifier: GPL-2.0-or-later
 """
-from PyQt5.QtWidgets import QAction
-from PyQt5.QtGui import QIcon, QKeySequence
-from PyQt5.QtCore import Qt
+try:
+    from PyQt6.QtGui import QKeySequence, QAction
+    from PyQt6.QtCore import Qt
+except:
+    from PyQt5.QtWidgets import QAction
+    from PyQt5.QtGui import QKeySequence
+    from PyQt5.QtCore import Qt
 import sys
 import traceback
 import inspect
 from . import docwrapper
 from .... import utils
-import krita
+from builtins import i18n
 
-if sys.version_info[0] > 2:
-    import importlib
-    from importlib.machinery import SourceFileLoader
-else:
-    import imp
+import importlib
+from importlib.machinery import SourceFileLoader
 
-PYTHON27 = sys.version_info.major == 2 and sys.version_info.minor == 7
 PYTHON33 = sys.version_info.major == 3 and sys.version_info.minor == 3
 PYTHON34 = sys.version_info.major == 3 and sys.version_info.minor == 4
 EXEC_NAMESPACE = "__main__"  # namespace that user scripts will run in
@@ -38,7 +38,7 @@ class RunAction(QAction):
 
         self.setText(i18n("Run"))
         self.setToolTip(i18n('Run Ctrl+R'))
-        self.setShortcut(QKeySequence(Qt.CTRL + Qt.Key_R))
+        self.setShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_R))
         self.setIcon(utils.getThemedIcon(':/icons/run.svg'))
 
     @property
@@ -70,10 +70,7 @@ class RunAction(QAction):
 
         try:
             if document and self.editor._documentModified is False:
-                if PYTHON27:
-                    users_module = self.run_py2_document(document)
-                else:
-                    users_module = self.run_py3_document(document)
+                users_module = self.run_py3_document(document)
 
                 # maybe script is to be execed, maybe main needs to be invoked
                 # if there is a main() then execute it, otherwise don't worry...
@@ -117,17 +114,6 @@ class RunAction(QAction):
         # scroll to bottom of output
         bottom = self.output.verticalScrollBar().maximum()
         self.output.verticalScrollBar().setValue(bottom)
-
-    def run_py2_document(self, document):
-        """ Loads and executes an external script using Python 2 specific operations
-        and returns the loaded module for further execution if needed.
-        """
-        try:
-            user_module = imp.load_source(EXEC_NAMESPACE, document.filePath)
-        except Exception as e:
-            raise e
-
-        return user_module
 
     def run_py3_document(self, document):
         """ Loads and executes an external script using Python 3 specific operations

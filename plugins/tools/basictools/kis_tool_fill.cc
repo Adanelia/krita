@@ -13,7 +13,6 @@
 #include <kis_debug.h>
 #include <klocalizedstring.h>
 
-#include <QLabel>
 #include <QSlider>
 #include <QSpinBox>
 #include <QCheckBox>
@@ -925,11 +924,7 @@ void KisToolFill::loadConfiguration()
         }
     }
     {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
         const QStringList colorLabelsStr = m_configGroup.readEntry<QString>("colorLabels", "").split(',', Qt::SkipEmptyParts);
-#else
-        const QStringList colorLabelsStr = m_configGroup.readEntry<QString>("colorLabels", "").split(',', QString::SkipEmptyParts);
-#endif
         m_selectedColorLabels.clear();
         for (const QString &colorLabelStr : colorLabelsStr) {
             bool ok;

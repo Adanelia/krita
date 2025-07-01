@@ -8,7 +8,6 @@
 #ifndef KIS_APPLICATION_H
 #define KIS_APPLICATION_H
 
-#include <QPointer>
 #include <QScopedPointer>
 #include <qtsingleapplication/qtsingleapplication.h>
 #include "kritaui_export.h"
@@ -18,6 +17,7 @@ class KisApplicationPrivate;
 class QWidget;
 class KisApplicationArguments;
 class KisAutoSaveRecoveryDialog;
+class KisExtendedModifiersMapperPluginInterface;
 
 #include <KisImportExportManager.h>
 
@@ -93,10 +93,12 @@ public:
 
     static void verifyMetatypeRegistration();
 
+    KisExtendedModifiersMapperPluginInterface* extendedModifiersPluginInterface();
+
 public Q_SLOTS:
 
     void executeRemoteArguments(QByteArray message, KisMainWindow *mainWindow);
-    void remoteArguments(QByteArray message, QObject*socket);
+    void remoteArguments(const QString &message);
     void fileOpenRequested(const QString & url);
     void setSplashScreenLoadingText(const QString&);
 

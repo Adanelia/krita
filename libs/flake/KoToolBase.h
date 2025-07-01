@@ -13,7 +13,10 @@
 #include <QList>
 #include <QHash>
 
+#include <KisQStringListFwd.h>
 #include "kritaflake_export.h"
+#include "KoDerivedResourceConverter.h"
+#include "KoAbstractCanvasResourceInterface.h"
 
 class KoShape;
 class KoCanvasBase;
@@ -31,7 +34,6 @@ class QWidget;
 class QCursor;
 class QPainter;
 class QString;
-#include <QStringList>
 class QRectF;
 class QPointF;
 class QInputMethodEvent;
@@ -229,6 +231,11 @@ public:
      * These events are sent by the OS in Windows
      */
     bool maskSyntheticEvents() const;
+
+    /**
+     * @return true if the tool uses preset opacity, false if it uses tool.
+     */
+    bool isOpacityPresetMode() const;
 
     /**
      * get the identifier code from the KoToolFactoryBase that created this tool.
@@ -529,6 +536,18 @@ protected:
      * Allows subclasses to specify whether synthetic mouse events should be accepted.
      */
     void setMaskSyntheticEvents(bool value);
+
+    /**
+     * Sets the opacity mode to either preset (true) or tool (false).
+     */
+    void setIsOpacityPresetMode(bool value);
+
+    void setConverter(KoDerivedResourceConverterSP converter);
+
+    void setAbstractResource(KoAbstractCanvasResourceInterfaceSP abstractResource);
+
+    QHash<int, KoAbstractCanvasResourceInterfaceSP> toolAbstractResources();
+    QHash<int, KoDerivedResourceConverterSP> toolConverters();
 
     /**
      * Returns true if activate() has been called (more times than deactivate :) )

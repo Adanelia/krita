@@ -7,38 +7,42 @@ import QtQuick 2.0
 import QtQuick.Controls 2.0
 import QtQuick.Layouts 1.12
 import org.krita.flake.text 1.0
+import org.krita.components 1.0
 
 CollapsibleGroupProperty {
-    propertyName: i18nc("@title:group", "Text Indent");
-    propertyType: TextPropertyBase.Paragraph;
+    propertyTitle: i18nc("@title:group", "Text Indent");
+    propertyName: "text-indent";
+    propertyType: TextPropertyConfigModel.Paragraph;
     toolTip: i18nc("@info:tooltip",
                    "Text Indent allows setting indentation at the line start. Only works when the text is wrapping.");
     searchTerms: i18nc("comma separated search terms for the text-indent property, matching is case-insensitive",
                        "text-indent");
 
-    property alias textIndentValue: textIndentSpn.value;
+    property alias textIndentValue: textIndentUnitCmb.dataValue;
     property alias hanging: indentHangingCkb.checked;
     property alias eachLine: eachLineCkb.checked;
-    property alias textIndentUnit: textIndentUnitCmb.comboBoxUnit;
+    property alias textIndentUnit: textIndentUnitCmb.dataUnit;
 
     onPropertiesUpdated: {
         blockSignals = true;
-        textIndentValue = properties.textIndent.length.value * textIndentSpn.multiplier;
-        textIndentUnit = properties.textIndent.length.unitType;
+        textIndentUnitCmb.dpi = canvasDPI;
+        textIndentUnitCmb.setTextProperties(properties);
+        textIndentUnitCmb.setDataValueAndUnit(properties.textIndent.length.value, properties.textIndent.length.unitType);
         hanging = properties.textIndent.hanging;
         eachLine = properties.textIndent.eachLine;
-        visible = properties.textIndentState !== KoSvgTextPropertiesModel.PropertyUnset;
+
+        propertyState = [properties.textIndentState];
+        setVisibleFromProperty();
         blockSignals = false;
     }
 
     onTextIndentValueChanged: {
         if (!blockSignals) {
-            properties.textIndent.length.value = textIndentValue / textIndentSpn.multiplier;
+            properties.textIndent.length.value = textIndentValue;
         }
     }
 
     onTextIndentUnitChanged: {
-        textIndentUnitCmb.currentIndex = textIndentUnitCmb.indexOfValue(textIndentUnit);
         if (!blockSignals) {
             properties.textIndent.length.unitType = textIndentUnit;
         }
@@ -59,20 +63,34 @@ CollapsibleGroupProperty {
     onEnableProperty: properties.textIndentState = KoSvgTextPropertiesModel.PropertySet;
 
     titleItem: RowLayout {
+        width: parent.width;
+        height: childrenRect.height;
         spacing: columnSpacing;
-        Layout.fillWidth: true;
+
+        Label {
+            id: propertyTitleLabel;
+            text: propertyTitle;
+            verticalAlignment: Text.AlignVCenter
+            color: sysPalette.text;
+            elide: Text.ElideRight;
+            Layout.maximumWidth: contentWidth;
+        }
+
         DoubleSpinBox {
             id: textIndentSpn;
             Layout.fillWidth: true;
             from: 0;
             to: 999 * multiplier;
+            onValueChanged: textIndentUnitCmb.userValue = value;
         }
         /// Note: percentage calculation in the default unitcombobox isn't great for textIndent as it assumes 100% = fontsize,
         /// While spec-wise, it's the inline length that defines percentage.
         UnitComboBox {
             id: textIndentUnitCmb;
             spinBoxControl: textIndentSpn;
-            Layout.fillWidth: true;
+            onUserValueChanged: textIndentSpn.value = userValue;
+            Layout.preferredWidth: minimumUnitBoxWidth;
+            Layout.maximumWidth: implicitWidth;
         }
     }
 

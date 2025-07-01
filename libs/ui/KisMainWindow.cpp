@@ -22,14 +22,12 @@
 #include <QDockWidget>
 #include <QIcon>
 #include <QInputDialog>
-#include <QLabel>
 #include <QLayout>
 #include <QMdiArea>
 #include <QMdiSubWindow>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QPointer>
-#include <QToolButton>
 #include <KisSignalMapper.h>
 #include <QTabBar>
 #include <QMoveEvent>
@@ -48,6 +46,8 @@
 #include <QWindow>
 #include <QTemporaryDir>
 #include <QScrollArea>
+#include <QActionGroup>
+
 #include <kactioncollection.h>
 #include <kactionmenu.h>
 #include <kis_debug.h>
@@ -366,10 +366,6 @@ KisMainWindow::KisMainWindow(QUuid uuid)
 
     qApp->setStartDragDistance(25);     // 25 px is a distance that works well for Tablet and Mouse events
 
-#ifdef Q_OS_MACOS
-    setUnifiedTitleAndToolBarOnMac(true);
-#endif
-
     connect(this, SIGNAL(restoringDone()), this, SLOT(forceDockTabFonts()));
     connect(this, SIGNAL(themeChanged()), d->viewManager, SLOT(updateIcons()));
     connect(this, SIGNAL(themeChanged()), KoToolManager::instance(), SLOT(themeChanged()));
@@ -378,10 +374,10 @@ KisMainWindow::KisMainWindow(QUuid uuid)
     connect(KisConfigNotifier::instance(), SIGNAL(configChanged()), this, SLOT(configChanged()));
 
     actionCollection()->addAssociatedWidget(this);
-    KoPluginLoader::instance()->load("Krita/ViewPlugin", "Type == 'Service' and ([X-Krita-Version] == 28)", KoPluginLoader::PluginsConfig(), d->viewManager, false);
+    KoPluginLoader::instance()->load("Krita/ViewPlugin", KoPluginLoader::PluginsConfig(), d->viewManager, false);
 
     // Load the per-application plugins (Right now, only Python) We do this only once, when the first mainwindow is being created.
-    KoPluginLoader::instance()->load("Krita/ApplicationPlugin", "Type == 'Service' and ([X-Krita-Version] == 28)", KoPluginLoader::PluginsConfig(), qApp, true);
+    KoPluginLoader::instance()->load("Krita/ApplicationPlugin", KoPluginLoader::PluginsConfig(), qApp, true);
 
     KoToolBoxFactory toolBoxFactory;
     QDockWidget *toolbox = createDockWidget(&toolBoxFactory);
@@ -422,7 +418,11 @@ KisMainWindow::KisMainWindow(QUuid uuid)
     d->styleActions = new QActionGroup(this);
     QAction * action;
 
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
     QStringList allowableStyles = QStringList() << "macintosh" << "breeze" << "fusion";
+#else
+    QStringList allowableStyles = QStringList() << "macos" << "breeze" << "fusion";
+#endif
 
     Q_FOREACH (QString styleName, QStyleFactory::keys()) {
 #ifdef Q_OS_ANDROID
@@ -502,8 +502,6 @@ KisMainWindow::KisMainWindow(QUuid uuid)
     d->welcomePage->setMainWindow(this);
 
     d->recentFiles->setRecentFilesModel(&KisRecentDocumentsModelWrapper::instance()->model());
-
-    applyMainWindowSettings(d->windowStateConfig);
 
     subWindowActivated();
     updateWindowMenu();
@@ -604,7 +602,7 @@ KisMainWindow::KisMainWindow(QUuid uuid)
     d->viewManager->updateGUI();
     d->viewManager->updateIcons();
 
-    QTimer::singleShot(1000, this, SLOT(checkSanity()));
+    QTimer::singleShot(1000, Qt::CoarseTimer, this, SLOT(checkSanity()));
 
     {
         using namespace std::placeholders; // For _1 placeholder
@@ -656,6 +654,7 @@ KisMainWindow::KisMainWindow(QUuid uuid)
         tabBar->setChangeCurrentOnDrag(true);
     }
 
+    applyMainWindowSettings(d->windowStateConfig);
 
 }
 
@@ -2010,7 +2009,7 @@ bool KisMainWindow::restoreWorkspace(KoResourceSP res)
 
     const bool showTitlebars = KisConfig(false).showDockerTitleBars();
     Q_FOREACH (QDockWidget *dock, dockWidgets()) {
-        if (dock->titleBarWidget()) {
+        if (dock->titleBarWidget() && !dock->titleBarWidget()->inherits("KisUtilityTitleBar")) {
             dock->titleBarWidget()->setVisible(showTitlebars || dock->isFloating());
         }
     }
@@ -2443,6 +2442,19 @@ void KisMainWindow::slotUpdateWidgetStyle()
             cfg.setWidgetStyle(key);
             qApp->setProperty(currentUnderlyingStyleNameProperty, key);
             qApp->setStyle(key);
+
+            // When switching to a style that uses system colors, reset the theme
+#ifndef Q_OS_HAIKU
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+            if (qApp->style()->objectName() == "macintosh") {
+                d->themeManager->setCurrentTheme("System");
+            }
+#else
+            if (qApp->style()->name() == "macos") {
+                d->themeManager->setCurrentTheme("System");
+            }
+#endif
+#endif
          }
      }
 }

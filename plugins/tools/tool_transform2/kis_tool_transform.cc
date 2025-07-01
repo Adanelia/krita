@@ -17,10 +17,7 @@
 
 #include <QPainter>
 #include <QPen>
-#include <QPushButton>
 #include <QObject>
-#include <QLabel>
-#include <QComboBox>
 #include <QApplication>
 #include <QMatrix4x4>
 #include <QMenu>
@@ -1112,30 +1109,6 @@ void KisToolTransform::slotTrackerChangedConfig(KisToolChangesTrackerDataSP stat
 
     slotUiChangedConfig(true);
     updateOptionWidget();
-}
-
-QList<KisNodeSP> KisToolTransform::fetchNodesList(ToolTransformArgs::TransformMode mode, KisNodeSP root, bool isExternalSourcePresent)
-{
-    QList<KisNodeSP> result;
-
-    auto fetchFunc =
-        [&result, mode, root] (KisNodeSP node) {
-        if (node->isEditable(node == root) &&
-                (!node->inherits("KisShapeLayer") || mode == ToolTransformArgs::FREE_TRANSFORM) &&
-                !node->inherits("KisFileLayer") &&
-                (!node->inherits("KisTransformMask") || node == root)) {
-
-                result << node;
-            }
-    };
-
-    if (isExternalSourcePresent) {
-        fetchFunc(root);
-    } else {
-        KisLayerUtils::recursiveApplyNodes(root, fetchFunc);
-    }
-
-    return result;
 }
 
 QWidget* KisToolTransform::createOptionWidget()

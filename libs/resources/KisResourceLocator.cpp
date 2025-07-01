@@ -14,7 +14,6 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QVersionNumber>
-#include <QElapsedTimer>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QBuffer>
@@ -338,7 +337,6 @@ KoResourceSP KisResourceLocator::resource(QString storageLocation, const QString
             d->resourceCache[key] = resource;
             // load all the embedded resources into temporary "memory" storage
             loadRequiredResources(resource);
-            resource->updateLinkedResourcesMetaData(KisGlobalResourcesInterface::instance());
         }
     }
 
@@ -573,7 +571,6 @@ KoResourceSP KisResourceLocator::importResource(const QString &resourceType, con
         resource->setVersion(0);
         resource->setDirty(false);
         loadRequiredResources(resource);
-        resource->updateLinkedResourcesMetaData(KisGlobalResourcesInterface::instance());
 
         Q_EMIT beginExternalResourceImport(resourceType, 1);
 
@@ -648,7 +645,6 @@ bool KisResourceLocator::addResource(const QString &resourceType, const KoResour
     resource->setMD5Sum(storage->resourceMd5(resourceType + "/" + resource->filename()));
     resource->setDirty(false);
     loadRequiredResources(resource);
-    resource->updateLinkedResourcesMetaData(KisGlobalResourcesInterface::instance());
 
     d->resourceCache[QPair<QString, QString>(storageLocation, resourceType + "/" + resource->filename())] = resource;
 
@@ -693,7 +689,6 @@ bool KisResourceLocator::updateResource(const QString &resourceType, const KoRes
     resource->setMD5Sum(storage->resourceMd5(resourceType + "/" + resource->filename()));
     resource->setDirty(false);
     loadRequiredResources(resource);
-    resource->updateLinkedResourcesMetaData(KisGlobalResourcesInterface::instance());
 
     // The version needs already to have been incremented
     if (!KisResourceCacheDb::addResourceVersion(resource->resourceId(), QDateTime::currentDateTime(), storage, resource)) {
@@ -732,7 +727,6 @@ bool KisResourceLocator::reloadResource(const QString &resourceType, const KoRes
     resource->setMD5Sum(storage->resourceMd5(resourceType + "/" + resource->filename()));
     resource->setDirty(false);
     loadRequiredResources(resource);
-    resource->updateLinkedResourcesMetaData(KisGlobalResourcesInterface::instance());
 
     // We haven't changed the version of the resource, so the cache must be still valid
     QPair<QString, QString> key = QPair<QString, QString> (storageLocation, resourceType + "/" + resource->filename());
@@ -973,6 +967,15 @@ QString KisResourceLocator::filePathForResource(KoResourceSP resource)
     return storage->resourceFilePath(resourceUrl);
 }
 
+void KisResourceLocator::updateFontStorage()
+{
+    if (!KisResourceCacheDb::synchronizeStorage(fontStorage())) {
+        qWarning() << i18n("Could not synchronize updated font registery with the database");
+    } else {
+        Q_EMIT storageResynchronized(fontStorage()->location(), false);
+    }
+}
+
 KisResourceLocator::LocatorError KisResourceLocator::firstTimeInstallation(InitializationStatus initializationStatus, const QString &installationResourcesLocation)
 {
     Q_EMIT progressMessage(i18n("Krita is running for the first time. Initialization will take some time."));
@@ -1020,35 +1023,7 @@ KisResourceLocator::LocatorError KisResourceLocator::firstTimeInstallation(Initi
     f.write(KritaVersionWrapper::versionString().toUtf8());
     f.close();
 
-    if (!initializeDb()) {
-        return LocatorError::CannotInitializeDb;
-    }
-
     return LocatorError::Ok;
-}
-
-bool KisResourceLocator::initializeDb()
-{
-    Q_EMIT progressMessage(i18n("Initializing the resources."));
-    d->errorMessages.clear();
-    findStorages();
-
-    Q_FOREACH(auto loader, KisResourceLoaderRegistry::instance()->values()) {
-        KisResourceCacheDb::registerResourceType(loader->resourceType());
-    }
-
-    Q_FOREACH(KisResourceStorageSP storage, d->storages) {
-        if (!KisResourceCacheDb::addStorage(storage, (storage->type() == KisResourceStorage::StorageType::Folder ? false : true))) {
-            d->errorMessages.append(QString("Could not add storage %1 to the cache database").arg(storage->location()));
-        }
-    }
-
-    Q_FOREACH(KisResourceStorageSP storage, d->storages) {
-        if (!KisResourceCacheDb::addStorageTags(storage)) {
-            d->errorMessages.append(QString("Could not add tags for storage %1 to the cache database").arg(storage->location()));
-        }
-    }
-    return (d->errorMessages.isEmpty());
 }
 
 void KisResourceLocator::findStorages()
@@ -1065,6 +1040,13 @@ void KisResourceLocator::findStorages()
     d->storages["memory"] = QSharedPointer<KisResourceStorage>::create("memory");
     d->storages["memory"]->setMetaData(KisResourceStorage::s_meta_name, i18n("Temporary Resources"));
 
+    // Add font storage
+    auto fontStorage = QSharedPointer<KisResourceStorage>::create("fontregistry");
+    if (fontStorage && fontStorage->valid()) {
+        d->storages["fontregistry"] = fontStorage;
+        d->storages["fontregistry"]->setMetaData(KisResourceStorage::s_meta_name, i18n("Font Storage"));
+    }
+
     // And add bundles and adobe libraries
     QStringList filters = QStringList() << "*.bundle" << "*.abr" << "*.asl";
     QDirIterator iter(d->resourceLocation, filters, QDir::Files, QDirIterator::Subdirectories);
@@ -1076,6 +1058,11 @@ void KisResourceLocator::findStorages()
             qWarning() << "KisResourceLocator::findStorages: the storage is invalid" << storage->location();
         }
         d->storages[storage->location()] = storage;
+    }
+
+    // Add any missing storage types to the resource cache database.
+    Q_FOREACH(const KisResourceStorage::StorageType &type, KisStoragePluginRegistry::instance()->storageTypes()) {
+        KisResourceCacheDb::registerStorageType(type);
     }
 }
 
@@ -1107,6 +1094,11 @@ KisResourceStorageSP KisResourceLocator::folderStorage() const
 KisResourceStorageSP KisResourceLocator::memoryStorage() const
 {
     return storageByLocation("memory");
+}
+
+KisResourceStorageSP KisResourceLocator::fontStorage() const
+{
+    return storageByLocation("fontregistry");
 }
 
 KisResourceLocator::ResourceStorage KisResourceLocator::getResourceStorage(int resourceId) const
@@ -1175,6 +1167,8 @@ QString KisResourceLocator::makeStorageLocationAbsolute(QString storageLocation)
 
 bool KisResourceLocator::synchronizeDb()
 {
+    Q_EMIT progressMessage(i18n("Synchronizing the resources."));
+
     d->errorMessages.clear();
 
     // Add resource types that have been added since first-time installation.
@@ -1187,6 +1181,8 @@ bool KisResourceLocator::synchronizeDb()
     Q_FOREACH(const KisResourceStorageSP storage, d->storages) {
         if (!KisResourceCacheDb::synchronizeStorage(storage)) {
             d->errorMessages.append(i18n("Could not synchronize %1 with the database", storage->location()));
+        } else {
+            Q_EMIT storageResynchronized(storage->location(), true);
         }
     }
 
@@ -1195,6 +1191,18 @@ bool KisResourceLocator::synchronizeDb()
             d->errorMessages.append(i18n("Could not synchronize %1 with the database", storage->location()));
         }
     }
+
+    Q_EMIT storagesBulkSynchronizationFinished();
+
+    /**
+     * In the current layout of the database we cannot set FOREIGN KEY
+     * for the metadata table (since it links to both, resources and storages),
+     * hence we should manually track the orphaned data.
+     *
+     * Theoretically, these should be none, if our code is correct, but who 
+     * knows anything about our code...
+     */
+    KisResourceCacheDb::removeOrphanedMetaData();
 
     // now remove the storages that no longer exists
     KisStorageModel model;

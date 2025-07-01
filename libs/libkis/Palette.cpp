@@ -55,6 +55,29 @@ void Palette::setColumnCount(int columns)
         d->palette->setColumnCount(columns);
 }
 
+int Palette::rowCount()
+{
+    if (!d->palette) return 0;
+    return d->palette->rowCount();
+}
+
+int Palette::rowCountGroup(QString name)
+{
+    if (!d->palette) return 0;
+    KisSwatchGroupSP group = d->palette->getGroup(name);
+    if (!group) return 0;
+    return group->rowCount();
+}
+
+void Palette::setRowCountGroup(int rows, QString name)
+{
+    if (!d->palette) return;
+    KisSwatchGroupSP group = d->palette->getGroup(name);
+    if (!group) return;
+    if (rows > 0)
+        group->setRowCount(rows);
+}
+
 QString Palette::comment()
 {
     if (!d->palette) return "";
@@ -91,6 +114,28 @@ int Palette::colorsCountTotal()
     return d->palette->colorCount();
 }
 
+int Palette::colorsCountGroup(QString name)
+{
+    if (!d->palette) return 0;
+    KisSwatchGroupSP group = d->palette->getGroup(name);
+    if (!group) return 0;
+    return group->colorCount();
+}
+
+int Palette::slotCount()
+{
+    if (!d->palette) return 0;
+    return d->palette->slotCount();
+}
+
+int Palette::slotCountGroup(QString name)
+{
+    if (!d->palette) return 0;
+    KisSwatchGroupSP group = d->palette->getGroup(name);
+    if (!group) return 0;
+    return group->slotCount();
+}
+
 Swatch *Palette::colorSetEntryByIndex(int index)
 {
     warnScript << "DEPRECATED Palette.colorSetEntryByIndex() - use Palette.entryByIndex() instead";
@@ -118,8 +163,8 @@ Swatch *Palette::entryByIndexFromGroup(int index, const QString &groupName)
     if (!d->palette || columnCount() == 0) {
         return new Swatch();
     }
-    int row = index % columnCount();
-    return new Swatch(d->palette->getSwatchFromGroup((index - row) / columnCount(), row, groupName));
+    int col = index % columnCount();
+    return new Swatch(d->palette->getSwatchFromGroup(col, (index - col) / columnCount(), groupName));
 }
 
 void Palette::addEntry(Swatch entry, QString groupName)
@@ -127,7 +172,7 @@ void Palette::addEntry(Swatch entry, QString groupName)
     d->palette->addSwatch(entry.kisSwatch(), groupName);
 }
 
-void Palette::removeEntry(int index, const QString &/*groupName*/)
+void Palette::removeEntry(int index)
 {
     int col = index % columnCount();
     int tmp = index;
@@ -141,10 +186,18 @@ void Palette::removeEntry(int index, const QString &/*groupName*/)
             break;
         }
         row -= g->rowCount();
-
     }
     if (!groupFoundIn) { return; }
     d->palette->removeSwatch(col, row, groupFoundIn);
+}
+void Palette::removeEntryFromGroup(int index, const QString &groupName)
+{
+    if (!d->palette) return;
+    KisSwatchGroupSP group = d->palette->getGroup(groupName);
+    if (!group) return;
+    int col = index % columnCount();
+    int row = (index - col) / columnCount();
+    d->palette->removeSwatch(col, row, group);
 }
 
 void Palette::changeGroupName(QString oldGroupName, QString newGroupName)

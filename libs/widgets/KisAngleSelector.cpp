@@ -85,8 +85,11 @@ void KisAngleSelectorSpinBox::setFlat(bool newFlat)
     m_d->isFlat = newFlat;
     m_d->updateStyleSheet();
 }
-
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
 void KisAngleSelectorSpinBox::enterEvent(QEvent *e)
+#else
+void KisAngleSelectorSpinBox::enterEvent(QEnterEvent *e)
+#endif
 {
     m_d->isHovered = true;
     m_d->updateStyleSheet();
@@ -128,20 +131,11 @@ QSize KisAngleSelectorSpinBox::minimumSizeHint() const
         s = textFromValue(minimum());
         s.truncate(18);
         s += fixedContent;
-#if QT_VERSION >= QT_VERSION_CHECK(5,11,0)
         w = qMax(w, fm.horizontalAdvance(s));
-#else
-        w = qMax(w, fm.width(s));
-#endif
         s = textFromValue(maximum());
         s.truncate(18);
         s += fixedContent;
-#if QT_VERSION >= QT_VERSION_CHECK(5,11,0)
         w = qMax(w, fm.horizontalAdvance(s));
-#else
-        w = qMax(w, fm.width(s));
-#endif
-
 
         w += 2; // cursor blinking space
 

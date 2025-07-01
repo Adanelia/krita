@@ -52,11 +52,17 @@ public:
                        << "font" // why are we doing this after the rest?
                        << "font-optical-sizing"
                        << "font-variation-settings"
+                       << "font-synthesis-weight"
+                       << "font-synthesis-style"
+                       << "font-synthesis-small-caps"
+                       << "font-synthesis-position"
+                       << "font-synthesis"
                        << "text-decoration"
                        << "text-decoration-line"
                        << "text-decoration-style"
                        << "text-decoration-color"
                        << "text-decoration-position"
+                       << "font-kerning"
                        << "letter-spacing"
                        << "word-spacing"
                        << "baseline-shift"
@@ -258,6 +264,10 @@ void SvgStyleParser::parsePA(SvgGraphicsContext *gc, const QString &command, con
         gc->textProperties.parseSvgTextAttribute(d->context, command, params);
     } else if (command == "font-size-adjust") {
         gc->textProperties.parseSvgTextAttribute(d->context, command, params);
+    } else if (command == "font-synthesis"
+               || command == "font-synthesis-weight" || command == "font-synthesis-style"
+               || command == "font-synthesis-small-caps" || command == "font-synthesis-position") {
+        gc->textProperties.parseSvgTextAttribute(d->context, command, params);
     } else if (command == "font") {
         qWarning() << "Krita does not support the 'font' shorthand";
     } else if (command == "text-decoration" || command == "text-decoration-line" || command == "text-decoration-style" || command == "text-decoration-color"
@@ -327,11 +337,11 @@ void SvgStyleParser::parsePA(SvgGraphicsContext *gc, const QString &command, con
             gc->markerMidId = gc->markerStartId;
             gc->markerEndId = gc->markerStartId;
         }
-    } else if (command == "line-height" || command == "white-space" || command == "xml:space" || command == "text-transform" || command == "text-indent"
+    } else if (command == "font-kerning" || command == "line-height" || command == "white-space" || command == "xml:space" || command == "text-transform" || command == "text-indent"
                || command == "word-break" || command == "line-break" || command == "hanging-punctuation" || command == "text-align"
                || command == "text-align-all" || command == "text-align-last" || command == "inline-size" || command == "overflow" || command == "text-overflow"
                || command == "tab-size" || command == "overflow-wrap" || command == "word-wrap" || command == "vertical-align"
-               || command ==  "shape-padding" || command ==   "shape-margin" || command ==   "text-orientation") {
+               || command ==  "shape-padding" || command ==   "shape-margin" || command == "text-orientation" || command == "text-rendering") {
         gc->textProperties.parseSvgTextAttribute(d->context, command, params);
     } else if (command == "krita:marker-fill-method") {
         gc->autoFillMarkers = params == "auto";
@@ -437,11 +447,7 @@ SvgStyles SvgStyleParser::parseOneCssStyle(const QString &style, const QStringLi
     SvgStyles parsedStyles;
     if (style.isEmpty()) return parsedStyles;
 
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
     QStringList substyles = style.simplified().split(';', Qt::SkipEmptyParts);
-#else
-    QStringList substyles = style.simplified().split(';', QString::SkipEmptyParts);
-#endif
     if (!substyles.count()) return parsedStyles;
 
     for (QStringList::Iterator it = substyles.begin(); it != substyles.end(); ++it) {
@@ -487,11 +493,7 @@ SvgStyles SvgStyleParser::collectStyles(const QDomElement &e)
 
     // collect all css style attributes
     Q_FOREACH (const QString &style, cssStyles) {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
         QStringList substyles = style.split(';', Qt::SkipEmptyParts);
-#else
-        QStringList substyles = style.split(';', QString::SkipEmptyParts);
-#endif
         if (!substyles.count())
             continue;
         for (QStringList::Iterator it = substyles.begin(); it != substyles.end(); ++it) {

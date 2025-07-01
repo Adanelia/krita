@@ -11,7 +11,7 @@
 #include "PythonPluginsModel.h"
 
 #include <kcolorscheme.h>
-#include <KI18n/KLocalizedString>
+#include <KLocalizedString>
 
 #include "PythonPluginManager.h"
 

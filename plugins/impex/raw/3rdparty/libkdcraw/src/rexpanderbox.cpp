@@ -221,7 +221,7 @@ void RArrowClickLabel::paintEvent(QPaintEvent*)
     QPainter p(this);
 
     QStyleOptionFrame opt;
-    opt.init(this);
+    opt.initFrom(this);
     opt.lineWidth    = 2;
     opt.midLineWidth = 0;
 
@@ -426,7 +426,11 @@ void RLabelExpander::setIcon(const QIcon& icon)
 
 QIcon RLabelExpander::icon() const
 {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     return QIcon(*d->pixmapLabel->pixmap());
+#else
+    return QIcon(d->pixmapLabel->pixmap());
+#endif
 }
 
 void RLabelExpander::setWidget(QWidget* const widget)

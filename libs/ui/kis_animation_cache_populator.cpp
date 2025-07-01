@@ -9,7 +9,6 @@
 #include <functional>
 
 #include <QTimer>
-#include <QMutex>
 #include <QStack>
 
 #include "kis_config.h"
@@ -397,5 +396,5 @@ void KisAnimationCachePopulator::slotConfigChanged()
 {
     KisConfig cfg(true);
     m_d->calculateAnimationCacheInBackground = cfg.calculateAnimationCacheInBackground();
-    QTimer::singleShot(1000, this, SLOT(slotRequestRegeneration()));
+    QTimer::singleShot(1000, Qt::CoarseTimer, this, SLOT(slotRequestRegeneration()));
 }

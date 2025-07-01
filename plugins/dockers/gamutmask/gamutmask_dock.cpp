@@ -3,6 +3,7 @@
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
  */
+#include "gamutmask_dock.h"
 
 #include <kis_debug.h>
 
@@ -25,7 +26,6 @@
 #include <KisResourceUserOperations.h>
 
 #include <QWidget>
-#include <QMenu>
 #include <QButtonGroup>
 #include <QRegularExpressionValidator>
 #include <QRegularExpression>
@@ -33,7 +33,6 @@
 #include <QMessageBox>
 #include <QInputDialog>
 
-#include "gamutmask_dock.h"
 #include <KisViewManager.h>
 #include <kis_canvas_resource_provider.h>
 #include <KoColorBackground.h>

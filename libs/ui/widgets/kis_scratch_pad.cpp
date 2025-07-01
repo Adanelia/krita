@@ -9,6 +9,9 @@
 #include <QApplication>
 #include <QScreen>
 #include <QMutex>
+#include <QMutexLocker>
+#include <QWheelEvent>
+#include <QPaintEvent>
 
 #include <KoColorSpace.h>
 #include <KoColorProfile.h>

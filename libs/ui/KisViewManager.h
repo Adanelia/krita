@@ -7,9 +7,9 @@
 #ifndef KIS_GUI_CLIENT_H
 #define KIS_GUI_CLIENT_H
 
-#include <QDockWidget>
 #include <QQueue>
 #include <QPointer>
+#include <QMainWindow>
 
 #include <KoToolManager.h>
 
@@ -201,6 +201,7 @@ public:
     void setQtMainWindow(QMainWindow* newMainWindow);
 
     static void initializeResourceManager(KoCanvasResourceProvider *resourceManager);
+    static void testingInitializeOpacityToPresetResourceConverter(KoCanvasResourceProvider *resourceManager);
 
 public Q_SLOTS:
 
@@ -260,6 +261,7 @@ private Q_SLOTS:
     void slotResetRotation();
     void slotResetDisplay();
     void slotToggleFullscreen();
+    void slotCreateOpacityResource(bool isOpacityPresetMode, KoToolBase *tool);
 private:
     void createActions();
     void setupManagers();

@@ -9,8 +9,6 @@
 
 #include "kritapsd_export.h"
 
-#include <QBitArray>
-#include <QByteArray>
 #include <QDomDocument>
 #include <QIODevice>
 #include <QString>
@@ -355,10 +353,7 @@ struct KRITAPSD_EXPORT psd_layer_gradient_fill {
             return false;
         }
 
-        bool res = false;
-
-        res = gradient.setContent(cfg->getString("gradient", ""));
-
+        bool res = bool(gradient.setContent(cfg->getString("gradient", "")));
         dithered = cfg->getBool("dither");
         reverse = cfg->getBool("reverse");
         align_with_layer = false; // not supported.

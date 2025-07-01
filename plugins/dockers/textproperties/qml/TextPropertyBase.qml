@@ -12,26 +12,47 @@ Column {
     property int firstColumnWidth: 32;
     property int columnSpacing: 5;
     padding: columnSpacing;
-    width: parent? parent.width - (padding*2): 100;
-    height: visible? childrenRect.height: 0;
-
-    enum PropertyType {
-        Character, ///< This property can be applied on a character level.
-        Paragraph, ///< This property only does something when applied to a paragraph.
-        Mixed ///< This property can be in either.
-    }
-
+    width: parent && typeof parent !== 'undefined'? parent.width - (padding * 2): 100;
+    height: visible? implicitHeight: 0;
 
     property KoSvgTextPropertiesModel properties : textPropertiesModel;
+    property int defaultVisibilityState : TextPropertyConfigModel.FollowDefault;
+    property double dpi: canvasDPI;
     signal propertiesUpdated; ///< Used by each text property panel to update the data on the controls.
     signal enableProperty; ///< Set the property to a default value.
     property bool blockSignals; ///< When setting the data on the controls, this needs to be enabled and checked while returning data from the controls.
 
-    property string propertyName; ///< Translated name of the property.
+    property string propertyName; ///< name of the property used for config purposes. Needs to be unique!
+    property string propertyTitle; ///< Translated name of the property.
     property int propertyType; ///< PropertyType of the current property.
     property int parentPropertyType; ///< PropertyType of the current property list it is in.
     property string toolTip; ///< Tooltip associated with the property.
     property string searchTerms; ///< Any additional search terms associated with the property.
+
+    property int visibilityState: TextPropertyConfigModel.FollowDefault;
+    property var propertyState: []; /// All property states related to the current property.
+
+    function setVisibleFromProperty() {
+        let visibleState = visibilityState === TextPropertyConfigModel.FollowDefault? defaultVisibilityState: visibilityState;
+        if (visibleState === TextPropertyConfigModel.AlwaysVisible) {
+            visible = true;
+        } else if (visibleState === TextPropertyConfigModel.NeverVisible) {
+            visible = false;
+        } else {
+            visible = false;
+            for (let propState of propertyState) {
+                if (propState === KoSvgTextPropertiesModel.PropertySet
+                        || propState === KoSvgTextPropertiesModel.PropertyTriState) {
+                    visible = true;
+                    break;
+                } else if (propState !== KoSvgTextPropertiesModel.PropertyUnset
+                           && visibleState === TextPropertyConfigModel.WhenRelevant) {
+                    visible = true;
+                    break;
+                }
+            }
+        }
+    }
 
     function autoEnable() {
         enabled = true;
@@ -40,10 +61,13 @@ Column {
         children.push(seperator);
     }
 
+    property PaletteControl propertyBasePalette: PaletteControl {
+        colorGroup: enabled? SystemPalette.Active: SystemPalette.Disabled;
+    }
+
     MenuSeparator {
         id: seperator;
         width: parent.width;
         topPadding: parent.padding;
-        bottomPadding:parent.padding;
     }
 }

@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: CC0-1.0
 
-from PyQt5.QtWidgets import (QWidget, QSpinBox,
-                             QVBoxLayout, QFormLayout, QComboBox)
-
+try:
+    from PyQt6.QtWidgets import (QWidget, QSpinBox,
+                                 QVBoxLayout, QFormLayout, QComboBox)
+except:
+    from PyQt5.QtWidgets import (QWidget, QSpinBox,
+                                 QVBoxLayout, QFormLayout, QComboBox)
+from builtins import i18n, i18nc
 
 class ScaleTool(QWidget):
 
@@ -19,7 +23,7 @@ class ScaleTool(QWidget):
         self.yResSpinBox = QSpinBox()
         self.strategyComboBox = QComboBox()
 
-        self.strategyComboBox.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.strategyComboBox.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self.setLayout(self.layout)
         self.initialize()
 

@@ -33,11 +33,12 @@
 #include <QSlider>
 #include <QStandardPaths>
 #include <QThread>
-#include <QToolButton>
 #include <QStyleFactory>
 #include <QScreen>
 #include <QFontComboBox>
 #include <QFont>
+#include <QSurfaceFormat>
+#include <QColorSpace>
 
 #include <KisApplication.h>
 #include <KisDocument.h>
@@ -49,6 +50,7 @@
 #include <KoColorSpaceEngine.h>
 #include <KoConfigAuthorPage.h>
 #include <KoConfig.h>
+
 #include <KoFileDialog.h>
 #include "KoID.h"
 #include <KoVBox.h>
@@ -64,6 +66,7 @@
 #include <KisResourceLocator.h>
 
 #include "KisProofingConfiguration.h"
+#include "KisProofingConfigModel.h"
 #include "KoColorConversionTransformation.h"
 #include "kis_action_registry.h"
 #include <kis_image.h>
@@ -75,12 +78,13 @@
 #include "kis_canvas_resource_provider.h"
 #include "kis_color_manager.h"
 #include "kis_config.h"
-#include "kis_cursor.h"
 #include "kis_image_config.h"
 #include "kis_preference_set_registry.h"
 #include "KisMainWindow.h"
 #include "KisMimeDatabase.h"
 #include "kis_file_name_requester.h"
+#include <KisWidgetConnectionUtils.h>
+#include <dialogs/KisFrameRateLimitModel.h>
 
 #include "slider_and_spin_box_sync.h"
 
@@ -92,12 +96,16 @@
 #include "input/wintab/drawpile_tablettester/tablettester.h"
 
 #include "KisDlgConfigureCumulativeUndo.h"
+#include <config-qt-patches-present.h>
 
 #ifdef Q_OS_WIN
-#include "config_use_qt_tablet_windows.h"
-#   ifndef USE_QT_TABLET_WINDOWS
-#       include <kis_tablet_support_win8.h>
-#   endif
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+// this include is Qt5-only, the switch to WinTab is embedded in Qt
+#  include "config_qt5_has_wintab_switch.h"
+#else
+#  include <QtGui/private/qguiapplication_p.h>
+#  include <QtGui/qpa/qplatformintegration.h>
+#endif
 #include "config-high-dpi-scale-factor-rounding-policy.h"
 #include "KisWindowsPackageUtils.h"
 #endif
@@ -402,7 +410,14 @@ GeneralTab::GeneralTab(QWidget *_parent, const char *_name)
     QString selectedMimeType = cmbDefaultExportFileType->currentData().toString();
 
     //
-    // Miscellaneous
+    // Animation tab
+    //
+    m_chkAutoPin->setChecked(cfg.autoPinLayersToTimeline());
+    m_chkAdaptivePlaybackRange->setChecked(cfg.adaptivePlaybackRange());
+    m_chkAutoZoom->setChecked(cfg.autoZoomTimelineToPlaybackRange());
+
+    //
+    // Miscellaneous tab
     //
     cmbStartupSession->addItem(i18n("Open default window"));
     cmbStartupSession->addItem(i18n("Load previous session"));
@@ -422,11 +437,9 @@ GeneralTab::GeneralTab(QWidget *_parent, const char *_name)
 
     chkShowRootLayer->setChecked(cfg.showRootLayer());
 
-    m_chkAutoPin->setChecked(cfg.autoPinLayersToTimeline());
-    m_chkAdaptivePlaybackRange->setChecked(cfg.adaptivePlaybackRange());
-
     chkRenameMergedLayers->setChecked(KisImageConfig(true).renameMergedLayers());
     chkRenamePastedLayers->setChecked(cfg.renamePastedLayers());
+    chkRenameDuplicatedLayers->setChecked(KisImageConfig(true).renameDuplicatedLayers());
 
     KConfigGroup group = KSharedConfig::openConfig()->group("File Dialogs");
     bool dontUseNative = true;
@@ -761,6 +774,7 @@ void GeneralTab::setDefault()
 
     chkRenameMergedLayers->setChecked(KisImageConfig(true).renameMergedLayers(true));
     chkRenamePastedLayers->setChecked(cfg.renamePastedLayers(true));
+    chkRenameDuplicatedLayers->setChecked(KisImageConfig(true).renameDuplicatedLayers(true));
 
     QAbstractButton *button = m_pasteFormatGroup.button(cfg.pasteFormat(true));
     Q_ASSERT(button);
@@ -924,6 +938,11 @@ bool GeneralTab::adaptivePlaybackRange()
     return m_chkAdaptivePlaybackRange->isChecked();
 }
 
+bool GeneralTab::autoZoomTimelineToPlaybackRange()
+{
+    return m_chkAutoZoom->isChecked();
+}
+
 int GeneralTab::forcedFontDpi()
 {
     return chkForcedFontDPI->isChecked() ? intForcedFontDPI->value() : -1;
@@ -937,6 +956,11 @@ bool GeneralTab::renameMergedLayers()
 bool GeneralTab::renamePastedLayers()
 {
     return chkRenamePastedLayers->isChecked();
+}
+
+bool GeneralTab::renameDuplicatedLayers()
+{
+    return chkRenameDuplicatedLayers->isChecked();
 }
 
 void GeneralTab::getBackgroundImage()
@@ -1040,6 +1064,7 @@ void ShortcutSettingsTab::cancelChanges()
 
 ColorSettingsTab::ColorSettingsTab(QWidget *parent, const char *name)
     : QWidget(parent)
+    , m_proofModel(new KisProofingConfigModel())
 {
     setObjectName(name);
 
@@ -1127,24 +1152,45 @@ ColorSettingsTab::ColorSettingsTab(QWidget *parent, const char *name)
     KisImageConfig cfgImage(true);
 
     KisProofingConfigurationSP proofingConfig = cfgImage.defaultProofingconfiguration();
-    m_page->sldAdaptationState->setMaximum(20);
+    m_proofModel->data.set(*proofingConfig.data());
+
+    connect(m_page->chkBlackpoint, SIGNAL(toggled(bool)), this, SLOT(updateProofingDisplayInfo()));
+    connect(m_page->cmbMonitorIntent, SIGNAL(currentIndexChanged(int)), this, SLOT(updateProofingDisplayInfo()));
+    m_page->cmbMonitorIntent->setCurrentIndex(cfg.monitorRenderIntent());
+    updateProofingDisplayInfo();
+
+    m_page->sldAdaptationState->setMaximum(m_proofModel->adaptationRangeMax());
     m_page->sldAdaptationState->setMinimum(0);
-    m_page->sldAdaptationState->setValue((int)proofingConfig->adaptationState*20);
 
-    //probably this should become the screenprofile?
-    KoColor ga(KoColorSpaceRegistry::instance()->rgb8());
-    ga.fromKoColor(proofingConfig->warningColor);
-    m_page->gamutAlarm->setColor(ga);
+    m_page->proofingSpaceSelector->showDepth(false);
 
-    const KoColorSpace *proofingSpace =  KoColorSpaceRegistry::instance()->colorSpace(proofingConfig->proofingModel,
-                                                                                      proofingConfig->proofingDepth,
-                                                                                      proofingConfig->proofingProfile);
+    m_page->cmbDisplayIntent->addItem(i18nc("Color conversion intent", "Perceptual"), INTENT_PERCEPTUAL);
+    m_page->cmbDisplayIntent->addItem(i18nc("Color conversion intent", "Relative Colorimetric"), INTENT_RELATIVE_COLORIMETRIC);
+    m_page->cmbDisplayIntent->addItem(i18nc("Color conversion intent", "Saturation"), INTENT_SATURATION);
+    m_page->cmbDisplayIntent->addItem(i18nc("Color conversion intent", "Absolute Colorimetric"), INTENT_ABSOLUTE_COLORIMETRIC);
+    m_page->cmbProofingIntent->setModel(m_page->cmbDisplayIntent->model());
+
+    m_page->cmbDisplayMode->addItem(i18nc("Display Mode", "Use global display settings"), int(KisProofingConfiguration::Monitor));
+    m_page->cmbDisplayMode->addItem(i18nc("Display Mode", "Simulate paper white and black"), int(KisProofingConfiguration::Paper));
+    m_page->cmbDisplayMode->addItem(i18nc("Display Mode", "Custom"), int(KisProofingConfiguration::Custom));
+
+    const KoColorSpace *proofingSpace =  KoColorSpaceRegistry::instance()->colorSpace(m_proofModel->proofingModel(),
+                                                                                      m_proofModel->proofingDepth(),
+                                                                                      m_proofModel->proofingProfile());
     if (proofingSpace) {
         m_page->proofingSpaceSelector->setCurrentColorSpace(proofingSpace);
     }
-
-    m_page->cmbProofingIntent->setCurrentIndex((int)proofingConfig->intent);
-    m_page->ckbProofBlackPoint->setChecked(proofingConfig->conversionFlags.testFlag(KoColorConversionTransformation::BlackpointCompensation));
+    updateProofingWidgets();
+    connect(m_page->cmbDisplayMode, SIGNAL(currentIndexChanged(int)), this, SLOT(proofingDisplayModeUpdated()));
+    connect(m_page->cmbDisplayIntent, SIGNAL(currentIndexChanged(int)), this, SLOT(proofingDisplayIntentUpdated()));
+    connect(m_page->cmbProofingIntent, SIGNAL(currentIndexChanged(int)), this, SLOT(proofingConversionIntentUpdated()));
+    connect(m_page->chkDispBlackPoint, &QCheckBox::toggled, m_proofModel.data(), &KisProofingConfigModel::dispBlackPointCompensation);
+    connect(m_page->sldAdaptationState, &QSlider::valueChanged, m_proofModel.data(), &KisProofingConfigModel::setadaptationState);
+    KisWidgetConnectionUtils::connectControl(m_page->ckbProofBlackPoint, m_proofModel.data(), "convBlackPointCompensation");
+    KisWidgetConnectionUtils::connectControl(m_page->gamutAlarm, m_proofModel.data(), "warningColor");
+    KisWidgetConnectionUtils::connectWidgetEnabledToProperty(m_page->gbxDisplayTransform, m_proofModel.data(), "enableDisplayToggles");
+    KisWidgetConnectionUtils::connectWidgetEnabledToProperty(m_page->sldAdaptationState, m_proofModel.data(), "enableAdaptationSlider");
+    KisWidgetConnectionUtils::connectWidgetEnabledToProperty(m_page->chkDispBlackPoint, m_proofModel.data(), "enableDisplayBlackPointCompensation");
 
     m_pasteBehaviourGroup.addButton(m_page->radioPasteWeb, KisClipboard::PASTE_ASSUME_WEB);
     m_pasteBehaviourGroup.addButton(m_page->radioPasteMonitor, KisClipboard::PASTE_ASSUME_MONITOR);
@@ -1156,8 +1202,6 @@ ColorSettingsTab::ColorSettingsTab(QWidget *parent, const char *name)
     if (button) {
         button->setChecked(true);
     }
-
-    m_page->cmbMonitorIntent->setCurrentIndex(cfg.monitorRenderIntent());
 
     toggleAllowMonitorProfileSelection(cfg.useSystemMonitorProfile());
 
@@ -1243,19 +1287,15 @@ void ColorSettingsTab::setDefault()
 
     KisConfig cfg(true);
     KisImageConfig cfgImage(true);
-    KisProofingConfigurationSP proofingConfig =  cfgImage.defaultProofingconfiguration();
-    const KoColorSpace *proofingSpace =  KoColorSpaceRegistry::instance()->colorSpace(proofingConfig->proofingModel,proofingConfig->proofingDepth,proofingConfig->proofingProfile);
+    KisProofingConfigurationSP proofingConfig =  cfgImage.defaultProofingconfiguration(true);
+    m_proofModel->data.set(*proofingConfig.data());
+    const KoColorSpace *proofingSpace =  KoColorSpaceRegistry::instance()->colorSpace(m_proofModel->proofingModel(),
+                                                                                      m_proofModel->proofingDepth(),
+                                                                                      m_proofModel->proofingProfile());
     if (proofingSpace) {
         m_page->proofingSpaceSelector->setCurrentColorSpace(proofingSpace);
     }
-    m_page->cmbProofingIntent->setCurrentIndex((int)proofingConfig->intent);
-    m_page->ckbProofBlackPoint->setChecked(proofingConfig->conversionFlags.testFlag(KoColorConversionTransformation::BlackpointCompensation));
-    m_page->sldAdaptationState->setValue(0);
-
-    //probably this should become the screenprofile?
-    KoColor ga(KoColorSpaceRegistry::instance()->rgb8());
-    ga.fromKoColor(proofingConfig->warningColor);
-    m_page->gamutAlarm->setColor(ga);
+    updateProofingWidgets();
 
     m_page->chkBlackpoint->setChecked(cfg.useBlackPointCompensation(true));
     m_page->chkAllowLCMSOptimization->setChecked(cfg.allowLCMSOptimization(true));
@@ -1296,6 +1336,38 @@ void ColorSettingsTab::refillMonitorProfiles(const KoID & colorSpaceId)
     }
 }
 
+void ColorSettingsTab::updateProofingWidgets() {
+    m_page->cmbDisplayIntent->setCurrentIndex(m_page->cmbDisplayIntent->findData((int)m_proofModel->effectiveDisplayIntent(), Qt::UserRole));
+    m_page->cmbProofingIntent->setCurrentIndex(m_page->cmbProofingIntent->findData((int)m_proofModel->conversionIntent(), Qt::UserRole));
+
+    m_page->cmbDisplayMode->setCurrentIndex(m_page->cmbDisplayMode->findData(int(m_proofModel->displayTransformState()), Qt::UserRole));
+    m_page->chkDispBlackPoint->setChecked(m_proofModel->effectiveDispBlackPointCompensation());
+    m_page->sldAdaptationState->setValue(m_proofModel->effectiveAdaptationState());
+}
+
+void ColorSettingsTab::proofingDisplayModeUpdated() {
+    m_proofModel->setdisplayTransformState(KisProofingConfiguration::DisplayTransformState(m_page->cmbDisplayMode->currentData(Qt::UserRole).toInt()));
+    updateProofingWidgets();
+}
+
+void ColorSettingsTab::proofingConversionIntentUpdated() {
+    m_proofModel->setconversionIntent(KoColorConversionTransformation::Intent(m_page->cmbProofingIntent->currentData(Qt::UserRole).toInt()));
+    updateProofingWidgets();
+}
+void ColorSettingsTab::proofingDisplayIntentUpdated() {
+    if (m_proofModel->displayTransformState() == KisProofingConfiguration::Custom) {
+        m_proofModel->setdisplayIntent(KoColorConversionTransformation::Intent(m_page->cmbDisplayIntent->currentData(Qt::UserRole).toInt()));
+        updateProofingWidgets();
+    }
+}
+
+void ColorSettingsTab::updateProofingDisplayInfo() {
+    KisDisplayConfig displayInfo;
+    displayInfo.intent = KoColorConversionTransformation::Intent(m_page->cmbMonitorIntent->currentIndex());
+    displayInfo.conversionFlags.setFlag(KoColorConversionTransformation::BlackpointCompensation, m_page->chkBlackpoint->isChecked());
+    m_proofModel->updateDisplayConfig(displayInfo);
+}
+
 //---------------------------------------------------------------------------------------------------
 
 void TabletSettingsTab::setDefault()
@@ -1307,21 +1379,9 @@ void TabletSettingsTab::setDefault()
     m_page->chkUseRightMiddleClickWorkaround->setChecked(
         KisConfig(true).useRightMiddleTabletButtonWorkaround(true));
 
-#if defined Q_OS_WIN && (!defined USE_QT_TABLET_WINDOWS || defined QT_HAS_WINTAB_SWITCH)
-
-#ifdef USE_QT_TABLET_WINDOWS
-    // ask Qt if WinInk is actually available
-    const bool isWinInkAvailable = true;
-#else
-    const bool isWinInkAvailable = KisTabletSupportWin8::isAvailable();
-#endif
-    if (isWinInkAvailable) {
+#if defined Q_OS_WIN && (defined QT5_HAS_WINTAB_SWITCH || QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) 
         m_page->radioWintab->setChecked(!cfg.useWin8PointerInput(true));
         m_page->radioWin8PointerInput->setChecked(cfg.useWin8PointerInput(true));
-    } else {
-        m_page->radioWintab->setChecked(true);
-        m_page->radioWin8PointerInput->setChecked(false);
-    }
 #else
         m_page->grpTabletApi->setVisible(false);
 #endif
@@ -1329,7 +1389,7 @@ void TabletSettingsTab::setDefault()
     m_page->chkUseTimestampsForBrushSpeed->setChecked(false);
     m_page->intMaxAllowedBrushSpeed->setValue(30);
     m_page->intBrushSpeedSmoothing->setValue(3);
-
+    m_page->tiltDirectionOffsetAngle->setAngle(0);
 }
 
 TabletSettingsTab::TabletSettingsTab(QWidget* parent, const char* name): QWidget(parent)
@@ -1349,30 +1409,21 @@ TabletSettingsTab::TabletSettingsTab(QWidget* parent, const char* name): QWidget
     m_page->chkUseRightMiddleClickWorkaround->setChecked(
          cfg.useRightMiddleTabletButtonWorkaround());
 
-#if defined Q_OS_WIN && (!defined USE_QT_TABLET_WINDOWS || defined QT_HAS_WINTAB_SWITCH)
-#ifdef USE_QT_TABLET_WINDOWS
-    // ask Qt if WinInk is actually available
-    const bool isWinInkAvailable = true;
-#else
-    const bool isWinInkAvailable = KisTabletSupportWin8::isAvailable();
-#endif
-    if (isWinInkAvailable) {
-        m_page->radioWintab->setChecked(!cfg.useWin8PointerInput());
-        m_page->radioWin8PointerInput->setChecked(cfg.useWin8PointerInput());
-    } else {
-        m_page->radioWintab->setChecked(true);
-        m_page->radioWin8PointerInput->setChecked(false);
-        m_page->grpTabletApi->setVisible(false);
+#if defined Q_OS_WIN && (defined QT5_HAS_WINTAB_SWITCH || QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+# if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QString actualTabletProtocol = "<unknown>";
+    using QWindowsApplication = QNativeInterface::Private::QWindowsApplication;
+    if (auto nativeWindowsApp = dynamic_cast<QWindowsApplication *>(QGuiApplicationPrivate::platformIntegration())) {
+        actualTabletProtocol = nativeWindowsApp->isWinTabEnabled() ? "WinTab" : "Windows Ink";
     }
+    m_page->grpTabletApi->setTitle(i18n("Tablet Input API (currently active API: \"%1\")", actualTabletProtocol));
+# endif
+    m_page->radioWintab->setChecked(!cfg.useWin8PointerInput());
+    m_page->radioWin8PointerInput->setChecked(cfg.useWin8PointerInput());
 
-#ifdef USE_QT_TABLET_WINDOWS
     connect(m_page->btnResolutionSettings, SIGNAL(clicked()), SLOT(slotResolutionSettings()));
     connect(m_page->radioWintab, SIGNAL(toggled(bool)), m_page->btnResolutionSettings, SLOT(setEnabled(bool)));
     m_page->btnResolutionSettings->setEnabled(m_page->radioWintab->isChecked());
-#else
-    m_page->btnResolutionSettings->setVisible(false);
-#endif
-
 #else
     m_page->grpTabletApi->setVisible(false);
 #endif
@@ -1402,6 +1453,13 @@ TabletSettingsTab::TabletSettingsTab(QWidget* parent, const char* name): QWidget
         //       used as the prefix and the text after as the suffix
         return i18np("Brush speed smoothing: {n} sample", "Brush speed smoothing: {n} samples", value);
     });
+
+    m_page->tiltDirectionOffsetAngle->setDecimals(0);
+    m_page->tiltDirectionOffsetAngle->setRange(-180, 180);
+    // the angle is saved in clockwise direction to be consistent with Drawing Angle, so negate
+    m_page->tiltDirectionOffsetAngle->setAngle(-cfg.readEntry("tiltDirectionOffset", 0.0));
+    m_page->tiltDirectionOffsetAngle->setPrefix(i18n("Pen tilt direction offset: "));
+    m_page->tiltDirectionOffsetAngle->setFlipOptionsMode(KisAngleSelector::FlipOptionsMode_MenuButton);
 }
 
 void TabletSettingsTab::slotTabletTest()
@@ -1410,13 +1468,13 @@ void TabletSettingsTab::slotTabletTest()
     tabletTestDialog.exec();
 }
 
-#if defined Q_OS_WIN && defined USE_QT_TABLET_WINDOWS
+#ifdef Q_OS_WIN
 #include "KisDlgCustomTabletResolution.h"
 #endif
 
 void TabletSettingsTab::slotResolutionSettings()
 {
-#if defined Q_OS_WIN && defined USE_QT_TABLET_WINDOWS
+#ifdef Q_OS_WIN
     KisDlgCustomTabletResolution dlg(this);
     dlg.exec();
 #endif
@@ -1438,6 +1496,7 @@ int PerformanceTab::realTilesRAM()
 
 PerformanceTab::PerformanceTab(QWidget *parent, const char *name)
     : WdgPerformanceSettings(parent, name)
+    , m_frameRateModel(new KisFrameRateLimitModel())
 {
     KisImageConfig cfg(true);
     const double totalRAM = cfg.totalRAM();
@@ -1521,8 +1580,10 @@ PerformanceTab::PerformanceTab(QWidget *parent, const char *name)
     sliderFrameTimeout->setSuffix(i18nc("suffix for \"seconds\"", " sec"));
     sliderFrameTimeout->setValue(cfg.frameRenderingTimeout() / 1000);
 
-    sliderFpsLimit->setRange(20, 300);
     sliderFpsLimit->setSuffix(i18n(" fps"));
+
+    KisWidgetConnectionUtils::connectControlState(sliderFpsLimit, m_frameRateModel.data(), "frameRateState", "frameRate");
+    KisWidgetConnectionUtils::connectControl(chkDetectFps, m_frameRateModel.data(), "detectFrameRate");
 
     connect(sliderThreadsLimit, SIGNAL(valueChanged(int)), SLOT(slotThreadsLimitChanged(int)));
     connect(sliderFrameClonesLimit, SIGNAL(valueChanged(int)), SLOT(slotFrameClonesLimitChanged(int)));
@@ -1576,8 +1637,12 @@ void PerformanceTab::load(bool requestDefault)
     sliderThreadsLimit->setValue(m_lastUsedThreadsLimit);
     sliderFrameClonesLimit->setValue(m_lastUsedClonesLimit);
 
-    sliderFpsLimit->setValue(cfg.fpsLimit(requestDefault));
-
+#if KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
+    m_frameRateModel->data.set(std::make_tuple(cfg.detectFpsLimit(requestDefault), cfg.fpsLimit(requestDefault)));
+#else
+    m_frameRateModel->data.set(std::make_tuple(false, cfg.fpsLimit(requestDefault)));
+    chkDetectFps->setVisible(false);
+#endif
     {
         KisConfig cfg2(true);
         chkOpenGLFramerateLogging->setChecked(cfg2.enableOpenGLFramerateLogging(requestDefault));
@@ -1639,7 +1704,10 @@ void PerformanceTab::save()
     cfg.setMaxNumberOfThreads(sliderThreadsLimit->value());
     cfg.setFrameRenderingClones(sliderFrameClonesLimit->value());
     cfg.setFrameRenderingTimeout(sliderFrameTimeout->value() * 1000);
-    cfg.setFpsLimit(sliderFpsLimit->value());
+    cfg.setFpsLimit(std::get<int>(*m_frameRateModel->data));
+#if KRITA_QT_HAS_UPDATE_COMPRESSION_PATCH
+    cfg.setDetectFpsLimit(std::get<bool>(*m_frameRateModel->data));
+#endif
 
     {
         KisConfig cfg2(true);
@@ -1702,15 +1770,15 @@ void PerformanceTab::slotFrameClonesLimitChanged(int value)
 
 namespace {
 
-QString colorSpaceString(KisSurfaceColorSpace cs, int depth)
+QString colorSpaceString(const KisSurfaceColorSpaceWrapper &cs, int depth)
 {
     const QString csString =
 #ifdef HAVE_HDR
-        cs == KisSurfaceColorSpace::bt2020PQColorSpace ? "Rec. 2020 PQ" :
-        cs == KisSurfaceColorSpace::scRGBColorSpace ? "Rec. 709 Linear" :
+        cs == KisSurfaceColorSpaceWrapper::bt2020PQColorSpace ? "Rec. 2020 PQ" :
+        cs == KisSurfaceColorSpaceWrapper::scRGBColorSpace ? "Rec. 709 Linear" :
 #endif
-        cs == KisSurfaceColorSpace::sRGBColorSpace ? "sRGB" :
-        cs == KisSurfaceColorSpace::DefaultColorSpace ? "sRGB" :
+        cs == KisSurfaceColorSpaceWrapper::sRGBColorSpace ? "sRGB" :
+        cs == KisSurfaceColorSpaceWrapper::DefaultColorSpace ? "sRGB" :
         "Unknown Color Space";
 
     return QString("%1 (%2 bit)").arg(csString).arg(depth);
@@ -1754,7 +1822,10 @@ DisplaySettingsTab::DisplaySettingsTab(QWidget *parent, const char *name)
     const QString rendererOpenGLText = i18nc("canvas renderer", "OpenGL");
     const QString rendererSoftwareText = i18nc("canvas renderer", "Software Renderer (very slow)");
 #ifdef Q_OS_WIN
-    const QString rendererOpenGLESText = i18nc("canvas renderer", "Direct3D 11 via ANGLE");
+    const QString rendererOpenGLESText =
+        qEnvironmentVariable("QT_ANGLE_PLATFORM") != "opengl"
+        ? i18nc("canvas renderer", "Direct3D 11 via ANGLE")
+        : i18nc("canvas renderer", "OpenGL via ANGLE");
 #else
     const QString rendererOpenGLESText = i18nc("canvas renderer", "OpenGL ES");
 #endif
@@ -1838,10 +1909,10 @@ DisplaySettingsTab::DisplaySettingsTab(QWidget *parent, const char *name)
     lblCurrentDisplayFormat->setText("");
     lblCurrentRootSurfaceFormat->setText("");
     grpHDRWarning->setVisible(false);
-    cmbPreferedRootSurfaceFormat->addItem(colorSpaceString(KisSurfaceColorSpace::sRGBColorSpace, 8));
+    cmbPreferedRootSurfaceFormat->addItem(colorSpaceString(KisSurfaceColorSpaceWrapper::sRGBColorSpace, 8));
 #ifdef HAVE_HDR
-    cmbPreferedRootSurfaceFormat->addItem(colorSpaceString(KisSurfaceColorSpace::bt2020PQColorSpace, 10));
-    cmbPreferedRootSurfaceFormat->addItem(colorSpaceString(KisSurfaceColorSpace::scRGBColorSpace, 16));
+    cmbPreferedRootSurfaceFormat->addItem(colorSpaceString(KisSurfaceColorSpaceWrapper::bt2020PQColorSpace, 10));
+    cmbPreferedRootSurfaceFormat->addItem(colorSpaceString(KisSurfaceColorSpaceWrapper::scRGBColorSpace, 16));
 #endif
     cmbPreferedRootSurfaceFormat->setCurrentIndex(formatToIndex(KisConfig::BT709_G22));
     slotPreferredSurfaceFormatChanged(cmbPreferedRootSurfaceFormat->currentIndex());
@@ -1853,11 +1924,7 @@ DisplaySettingsTab::DisplaySettingsTab(QWidget *parent, const char *name)
     }
 
     if (context) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
-        QScreen *screen = QGuiApplication::screenAt(rect().center());
-#else
-        QScreen *screen = 0;
-#endif
+        QScreen *screen = KisPart::instance()->currentMainwindow()->screen();
         KisScreenInformationAdapter adapter(context);
         if (screen && adapter.isValid()) {
             KisScreenInformationAdapter::ScreenInfo info = adapter.infoForScreen(screen);
@@ -1887,11 +1954,7 @@ DisplaySettingsTab::DisplaySettingsTab(QWidget *parent, const char *name)
         }
 
         const QSurfaceFormat currentFormat = KisOpenGLModeProber::instance()->surfaceformatInUse();
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
-        KisSurfaceColorSpace colorSpace = currentFormat.colorSpace();
-#else
-        KisSurfaceColorSpace colorSpace = KisSurfaceColorSpace::DefaultColorSpace;
-#endif
+        const auto colorSpace = KisSurfaceColorSpaceWrapper::fromQtColorSpace(currentFormat.colorSpace());
         lblCurrentRootSurfaceFormat->setText(colorSpaceString(colorSpace, currentFormat.redBufferSize()));
         cmbPreferedRootSurfaceFormat->setCurrentIndex(formatToIndex(cfg.rootSurfaceFormat()));
         connect(cmbPreferedRootSurfaceFormat, SIGNAL(currentIndexChanged(int)), SLOT(slotPreferredSurfaceFormatChanged(int)));
@@ -2034,17 +2097,13 @@ void DisplaySettingsTab::slotPreferredSurfaceFormatChanged(int index)
 
     QOpenGLContext *context = QOpenGLContext::currentContext();
     if (context) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
-        QScreen *screen = QGuiApplication::screenAt(rect().center());
-#else
-        QScreen *screen = 0;
-#endif
+        QScreen *screen = KisPart::instance()->currentMainwindow()->screen();
         KisScreenInformationAdapter adapter(context);
         if (adapter.isValid()) {
             KisScreenInformationAdapter::ScreenInfo info = adapter.infoForScreen(screen);
             if (info.isValid()) {
                 if (cmbPreferedRootSurfaceFormat->currentIndex() != formatToIndex(KisConfig::BT709_G22) &&
-                    info.colorSpace == KisSurfaceColorSpace::sRGBColorSpace) {
+                    info.colorSpace == KisSurfaceColorSpaceWrapper::sRGBColorSpace) {
                     grpHDRWarning->setVisible(true);
                     grpHDRWarning->setPixmap(
                         grpHDRWarning->style()->standardIcon(QStyle::SP_MessageBoxWarning).pixmap(QSize(32, 32)));
@@ -2299,6 +2358,8 @@ KisDlgPreferences::KisDlgPreferences(QWidget* parent, const char* name)
         }
     }
 
+    // TODO QT6: check what this code actually does?
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
     {
         // HACK ALERT! Remove title widget background, thus making
         // it consistent across all systems
@@ -2310,6 +2371,7 @@ KisDlgPreferences::KisDlgPreferences(QWidget* parent, const char* name)
             }
         }
     }
+#endif
 }
 
 KisDlgPreferences::~KisDlgPreferences()
@@ -2458,8 +2520,10 @@ bool KisDlgPreferences::editPreferences()
         cfg.setCumulativeUndoRedo(m_general->chkCumulativeUndo->isChecked());
         cfg.setCumulativeUndoData(m_general->m_cumulativeUndoData);
 
+        // Animation..
         cfg.setAutoPinLayersToTimeline(m_general->autopinLayersToTimeline());
         cfg.setAdaptivePlaybackRange(m_general->adaptivePlaybackRange());
+        cfg.setAutoZoomTimelineToPlaybackRange(m_general->autoZoomTimelineToPlaybackRange());
 
 #ifdef Q_OS_ANDROID
         QFileInfo fi(m_general->m_resourceFolderSelector->currentData(Qt::UserRole).value<QString>());
@@ -2472,6 +2536,7 @@ bool KisDlgPreferences::editPreferences()
 
         KisImageConfig(true).setRenameMergedLayers(m_general->renameMergedLayers());
         cfg.setRenamePastedLayers(m_general->renamePastedLayers());
+        KisImageConfig(true).setRenameDuplicatedLayers(m_general->renameDuplicatedLayers());
 
         // Color settings
         cfg.setUseSystemMonitorProfile(m_colorSettings->m_page->chkUseSystemMonitorProfile->isChecked());
@@ -2499,10 +2564,13 @@ bool KisDlgPreferences::editPreferences()
         cfg.writeEntry("ExrDefaultColorProfile", m_colorSettings->m_page->cmbColorProfileForEXR->currentText());
 
         cfgImage.setDefaultProofingConfig(m_colorSettings->m_page->proofingSpaceSelector->currentColorSpace(),
-                                          m_colorSettings->m_page->cmbProofingIntent->currentIndex(),
-                                          m_colorSettings->m_page->ckbProofBlackPoint->isChecked(),
-                                          m_colorSettings->m_page->gamutAlarm->color(),
-                                          (double)m_colorSettings->m_page->sldAdaptationState->value()/20);
+                                          int(m_colorSettings->m_proofModel->conversionIntent()),
+                                          m_colorSettings->m_proofModel->convBlackPointCompensation(),
+                                          m_colorSettings->m_proofModel->warningColor(),
+                                          m_colorSettings->m_proofModel->adaptationState()*0.05,
+                                          m_colorSettings->m_proofModel->dispBlackPointCompensation(),
+                                          int(m_colorSettings->m_proofModel->displayIntent()),
+                                          m_colorSettings->m_proofModel->displayTransformState());
         cfg.setUseBlackPointCompensation(m_colorSettings->m_page->chkBlackpoint->isChecked());
         cfg.setAllowLCMSOptimization(m_colorSettings->m_page->chkAllowLCMSOptimization->isChecked());
         cfg.setForcePaletteColors(m_colorSettings->m_page->chkForcePaletteColor->isChecked());
@@ -2514,20 +2582,22 @@ bool KisDlgPreferences::editPreferences()
         cfg.setUseRightMiddleTabletButtonWorkaround(
             m_tabletSettings->m_page->chkUseRightMiddleClickWorkaround->isChecked());
 
-#if defined Q_OS_WIN && (!defined USE_QT_TABLET_WINDOWS || defined QT_HAS_WINTAB_SWITCH)
-#ifdef USE_QT_TABLET_WINDOWS
-        // ask Qt if WinInk is actually available
-        const bool isWinInkAvailable = true;
-#else
-        const bool isWinInkAvailable = KisTabletSupportWin8::isAvailable();
-#endif
-        if (isWinInkAvailable) {
-            cfg.setUseWin8PointerInput(m_tabletSettings->m_page->radioWin8PointerInput->isChecked());
+#if defined Q_OS_WIN && (defined QT5_HAS_WINTAB_SWITCH || QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)) 
+        cfg.setUseWin8PointerInput(m_tabletSettings->m_page->radioWin8PointerInput->isChecked());
+        
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        // Qt6 supports switching the tablet API on the fly
+        using QWindowsApplication = QNativeInterface::Private::QWindowsApplication;
+        if (auto nativeWindowsApp = dynamic_cast<QWindowsApplication *>(QGuiApplicationPrivate::platformIntegration())) {
+            nativeWindowsApp->setWinTabEnabled(!cfg.useWin8PointerInput());
         }
+#  endif
 #endif
         cfg.writeEntry<bool>("useTimestampsForBrushSpeed", m_tabletSettings->m_page->chkUseTimestampsForBrushSpeed->isChecked());
         cfg.writeEntry<int>("maxAllowedSpeedValue", m_tabletSettings->m_page->intMaxAllowedBrushSpeed->value());
         cfg.writeEntry<int>("speedValueSmoothing", m_tabletSettings->m_page->intBrushSpeedSmoothing->value());
+        // the angle is saved in clockwise direction to be consistent with Drawing Angle, so negate
+        cfg.writeEntry<int>("tiltDirectionOffset", -m_tabletSettings->m_page->tiltDirectionOffsetAngle->angle());
 
         m_performanceSettings->save();
 

@@ -12,7 +12,6 @@
 #include <QFileDialog>
 #include <QString>
 #include <QStringList>
-#include <QList>
 
 
 /**
@@ -80,6 +79,12 @@ public:
      */
     void setMimeTypeFilters(const QStringList &mimeTypeList,
                             QString defaultMimeType = QString());
+
+    // Set the file type filter
+    void setNameFilter(const QString &filter);
+
+    //Set the selected file type filter
+    void selectNameFilter(const QString &filter);
 
     /// Get the file names the user selected in the file dialog
     QStringList filenames();

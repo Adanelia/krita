@@ -98,6 +98,7 @@
 #include <kis_workspace_resource.h>
 #include <KisSessionResource.h>
 #include <resources/KoSvgSymbolCollectionResource.h>
+#include <resources/KoFontFamily.h>
 
 #include "widgets/KisScreenColorSampler.h"
 #include "KisDlgInternalColorSelector.h"
@@ -115,6 +116,10 @@
 
 #include <config-seexpr.h>
 #include <config-safe-asserts.h>
+
+#include <kpluginfactory.h>
+#include <input/KisExtendedModifiersMapperPluginInterface.h>
+
 
 namespace {
 const QTime appStartTime(QTime::currentTime());
@@ -166,6 +171,7 @@ public:
     bool batchRun {false};
     QVector<QByteArray> earlyRemoteArguments;
     QVector<QString> earlyFileOpenEvents;
+    QScopedPointer<KisExtendedModifiersMapperPluginInterface> extendedModifiersPluginInterface;
 };
 
 class KisApplication::ResetStarting
@@ -210,7 +216,12 @@ KisApplication::KisApplication(const QString &key, int &argc, char **argv)
     setWindowIcon(KisIconUtils::loadIcon("krita-branding"));
 
     if (qgetenv("KRITA_NO_STYLE_OVERRIDE").isEmpty()) {
+
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
         QStringList styles = QStringList() << "haiku" << "macintosh" << "breeze" << "fusion";
+#else
+        QStringList styles = QStringList() << "haiku" << "macos" << "breeze" << "fusion";
+#endif
         if (!styles.contains(style()->objectName().toLower())) {
             Q_FOREACH (const QString & style, styles) {
                 if (!setStyle(style)) {
@@ -228,11 +239,34 @@ KisApplication::KisApplication(const QString &key, int &argc, char **argv)
         QString widgetStyleFromConfig = cfg.widgetStyle();
         if(widgetStyleFromConfig != "") {
             qApp->setStyle(widgetStyleFromConfig);
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+        } else if (style()->objectName().toLower() == "macintosh") {
+            // if no configured style on macOS, default to Fusion
+            qApp->setStyle("fusion");
         }
+#else
+        } else if (style()->objectName().toLower() == "macos") {
+            // if no configured style on macOS, default to Fusion
+            qApp->setStyle("fusion");
+        }
+#endif
 
     }
     else {
         qDebug() << "Style override disabled, using" << style()->objectName();
+    }
+
+    /**
+     * Load platform plugin for modifiers fetching
+     */
+    {
+        KPluginFactory *factory = KoPluginLoader::instance()->loadSinglePlugin(
+            std::make_pair("X-Krita-PlatformId", QGuiApplication::platformName()),
+            "Krita/PlatformPlugin");
+
+        if (factory) {
+            d->extendedModifiersPluginInterface.reset(factory->create<KisExtendedModifiersMapperPluginInterface>());
+        }
     }
 
     // store the style name
@@ -313,7 +347,7 @@ bool KisApplication::event(QEvent *event)
     #ifdef Q_OS_MACOS
     if (event->type() == QEvent::FileOpen) {
         QFileOpenEvent *openEvent = static_cast<QFileOpenEvent *>(event);
-        Q_EMIT fileOpenRequest(openEvent->file());
+        fileOpenRequested(openEvent->file());
         return true;
     }
     #endif
@@ -362,6 +396,8 @@ bool KisApplication::registerResources()
                                                      ResourceType::LayerStyles,
                                                      i18nc("Resource type name", "Layer styles"),
                                                      QStringList() << "application/x-photoshop-style"));
+
+    reg->add(new KisResourceLoader<KoFontFamily>(ResourceType::FontFamilies, ResourceType::FontFamilies, i18n("Font Families"), QStringList() << "application/x-font-ttf" << "application/x-font-otf"));
 
     reg->registerFixup(10, new KisBrushTypeMetaDataFixup());
 
@@ -626,18 +662,24 @@ bool KisApplication::start(const KisApplicationArguments &args)
                     doc->setFileBatchMode(true);
                     int sequenceStart = 0;
 
+
+                    qDebug() << ppVar(exportFileName);
                     KisAsyncAnimationFramesSaveDialog exporter(doc->image(),
                                                doc->image()->animationInterface()->documentPlaybackRange(),
                                                exportFileName,
                                                sequenceStart,
                                                false,
                                                0);
+
                     exporter.setBatchMode(d->batchRun);
-                    KisAsyncAnimationFramesSaveDialog::Result result =
-                        exporter.regenerateRange(0);
+
+                    KisAsyncAnimationFramesSaveDialog::Result result = exporter.regenerateRange(nullptr);
+                    qDebug() << ppVar(result);
+
                     if (result != KisAsyncAnimationFramesSaveDialog::RenderComplete) {
                         errKrita << i18n("Failed to render animation frames!") << Qt::endl;
                     }
+
                     QTimer::singleShot(0, this, SLOT(quit()));
                     return true;
                 }
@@ -719,6 +761,7 @@ KisApplication::~KisApplication()
 {
     if (!isRunning()) {
         KisResourceCacheDb::deleteTemporaryResources();
+        KisResourceCacheDb::performHouseKeepingOnExit();
     }
 }
 
@@ -955,10 +998,8 @@ void KisApplication::executeRemoteArguments(QByteArray message, KisMainWindow *m
 }
 
 
-void KisApplication::remoteArguments(QByteArray message, QObject *socket)
+void KisApplication::remoteArguments(const QString &message)
 {
-    Q_UNUSED(socket);
-
     // check if we have any mainwindow
     KisMainWindow *mw = qobject_cast<KisMainWindow*>(qApp->activeWindow());
 
@@ -966,11 +1007,14 @@ void KisApplication::remoteArguments(QByteArray message, QObject *socket)
         mw = KisPart::instance()->mainWindows().first();
     }
 
+    const QByteArray unpackedMessage =
+        QByteArray::fromBase64(message.toLatin1());
+
     if (!mw) {
-        d->earlyRemoteArguments << message;
+        d->earlyRemoteArguments << unpackedMessage;
         return;
     }
-    executeRemoteArguments(message, mw);
+    executeRemoteArguments(unpackedMessage, mw);
 }
 
 void KisApplication::fileOpenRequested(const QString &url)
@@ -1162,4 +1206,9 @@ void KisApplication::askResetConfig()
     if (ok) {
         resetConfig();
     }
+}
+
+KisExtendedModifiersMapperPluginInterface* KisApplication::extendedModifiersPluginInterface()
+{
+    return d->extendedModifiersPluginInterface.data();
 }

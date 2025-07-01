@@ -52,6 +52,25 @@ public:
     /// Delete all storages that are Unknown or Memory and all resources that are marked temporary or belong to Unknown or Memory storages
     static void deleteTemporaryResources();
 
+    /// perform optimize and vacuum when necessary
+    static void performHouseKeepingOnExit();
+
+    /// set the foreign_keys feature state of the database
+    /// (the function **may** throw SQL exceptions,
+    /// call in a try-block only!)
+    static void setForeignKeysStateImpl(bool isEnabled);
+
+    /// get the foreign_keys feature state of the database
+    /// (the function **may** throw SQL exceptions,
+    /// call in a try-block only!)
+    static bool getForeignKeysStateImpl();
+
+    /// Called in the end of the database creation step to enable
+    /// or disable the foreign_keys state depending on the release
+    /// status of Krita. Currently, only developer's builds of Krita
+    /// have foreign_keys constraint enabled.
+    static void synchronizeForeignKeysState();
+
 private:
 
     friend class KisResourceLocator;
@@ -114,6 +133,12 @@ private:
     static bool addTag(const QString &resourceType, const QString storageLocation, KisTagSP tag);
     static bool addTags(KisResourceStorageSP storage, QString resourceType);
 
+    /**
+     * @brief registerStorageType registers this storage type in the database
+     * @param storageType the enum value that represents the type
+     * @return true if the type was registered or had already been registered
+     */
+    static bool registerStorageType(const KisResourceStorage::StorageType storageType);
     static bool addStorage(KisResourceStorageSP storage, bool preinstalled);
     static bool addStorageTags(KisResourceStorageSP storage);
 
@@ -141,6 +166,14 @@ private:
      */
     static bool updateMetaDataForId(const QMap<QString, QVariant> map, int id, const QString &tableName);
     static bool addMetaDataForId(const QMap<QString, QVariant> map, int id, const QString &tableName);
+
+    /**
+     * @brief removeOrphanedMetaData
+     * Previous versions of Krita never removed metadata, so this function doublechecks and
+     * removes any orphaned metadata for either storages or resources from the database.
+     * @return true if successful, false if not
+     */
+    static bool removeOrphanedMetaData();
 
     static bool s_valid;
     static QString s_lastError;

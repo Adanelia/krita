@@ -19,9 +19,11 @@ kis_add_library(kritabuginfo MODULE ${kritabuginfo_SOURCES})
 
 target_link_libraries(kritabuginfo kritaui)
 if (ANDROID)
-    target_link_libraries(kritabuginfo Qt${QT_MAJOR_VERSION}::AndroidExtras)
+    if (QT_MAJOR_VERSION STREQUAL "5")
+        target_link_libraries(kritabuginfo Qt${QT_MAJOR_VERSION}::AndroidExtras)
+    endif()
 endif()
 
 install(TARGETS kritabuginfo  DESTINATION ${KRITA_PLUGIN_INSTALL_DIR})
 
-install( FILES  buginfo.xmlgui  DESTINATION ${DATA_INSTALL_DIR}/kritaplugins)
+install( FILES  buginfo.xmlgui  DESTINATION ${KDE_INSTALL_DATADIR}/kritaplugins)

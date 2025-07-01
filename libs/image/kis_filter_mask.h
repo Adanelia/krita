@@ -25,11 +25,12 @@ class KRITAIMAGE_EXPORT KisFilterMask : public KisEffectMask, public KisNodeFilt
     Q_OBJECT
 
 public:
-
     /**
      * Create an empty filter mask.
      */
     KisFilterMask(KisImageWSP image, const QString &name = QString());
+
+    KisFilterMask(const KisFilterMask& rhs);
 
     ~KisFilterMask() override;
 
@@ -42,8 +43,6 @@ public:
     bool accept(KisNodeVisitor &v) override;
     void accept(KisProcessingVisitor &visitor, KisUndoAdapter *undoAdapter) override;
 
-    KisFilterMask(const KisFilterMask& rhs);
-
     void setFilter(KisFilterConfigurationSP filterConfig, bool checkCompareConfig = true) override;
 
     QRect decorateRect(KisPaintDeviceSP &src,
@@ -52,8 +51,18 @@ public:
                        PositionToFilthy maskPos,
                        KisRenderPassFlags flags) const override;
 
+    QRect extent() const override;
+    QRect exactBounds() const override;
+
     QRect changeRect(const QRect &rect, PositionToFilthy pos = N_FILTHY) const override;
     QRect needRect(const QRect &rect, PositionToFilthy pos = N_FILTHY) const override;
+
+private:
+    bool filterNeedsTransparentPixels() const;
+
+private:
+    struct Private;
+    QScopedPointer<Private> m_d;
 };
 
 #endif //_KIS_FILTER_MASK_

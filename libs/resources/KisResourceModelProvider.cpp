@@ -8,10 +8,12 @@
 #include "KisResourceModel.h"
 #include "KisTagModel.h"
 #include "KisTagResourceModel.h"
+#include "KisResourceMetaDataModel.h"
 
 #include "KoResource.h"
 
 #include <memory>
+#include <optional>
 
 #include <QGlobalStatic>
 
@@ -22,6 +24,7 @@ struct KisResourceModelProvider::Private
     QMap<QString, KisAllResourcesModel*> resourceModels;
     QMap<QString, KisAllTagsModel*> tagModels;
     QMap<QString, KisAllTagResourceModel*> tagResourceModels;
+    std::optional<KisResourceMetaDataModel> metaDataModel;
 };
 
 KisResourceModelProvider::KisResourceModelProvider()
@@ -40,7 +43,7 @@ KisResourceModelProvider::~KisResourceModelProvider()
 KisAllResourcesModel *KisResourceModelProvider::resourceModel(const QString &resourceType)
 {
     if (!s_instance->d->resourceModels.contains(resourceType)) {
-       s_instance->d->resourceModels[resourceType] = new KisAllResourcesModel(resourceType);
+        s_instance->d->resourceModels[resourceType] = new KisAllResourcesModel(resourceType);
     }
     return s_instance->d->resourceModels[resourceType];
 }
@@ -73,4 +76,35 @@ void KisResourceModelProvider::testingResetAllModels()
     for (auto it = s_instance->d->tagResourceModels.begin(); it != s_instance->d->tagResourceModels.end(); ++it) {
         it.value()->resetQuery();
     }
+
+    /// NOTE: we just remove the entire metadata model when we want to reset it,
+    /// please refactor it when the metadata model becomes a QObject and will get
+    /// any kind of connection to outer world.
+    s_instance->d->metaDataModel = std::nullopt;
+}
+
+void KisResourceModelProvider::testingCloseAllQueries()
+{
+    for (auto it = s_instance->d->tagModels.begin(); it != s_instance->d->tagModels.end(); ++it) {
+        it.value()->closeQuery();
+    }
+    for (auto it = s_instance->d->resourceModels.begin(); it != s_instance->d->resourceModels.end(); ++it) {
+        it.value()->closeQuery();
+    }
+    for (auto it = s_instance->d->tagResourceModels.begin(); it != s_instance->d->tagResourceModels.end(); ++it) {
+        it.value()->closeQuery();
+    }
+
+    /// NOTE: we just remove the entire metadata model when we want to reset it,
+    /// please refactor it when the metadata model becomes a QObject and will get
+    /// any kind of connection to outer world.
+    s_instance->d->metaDataModel = std::nullopt;
+}
+
+KisResourceMetaDataModel* KisResourceModelProvider::resourceMetadataModel()
+{
+    if (!s_instance->d->metaDataModel) {
+        s_instance->d->metaDataModel.emplace("resources");
+    }
+    return &s_instance->d->metaDataModel.value();
 }

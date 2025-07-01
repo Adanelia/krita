@@ -9,8 +9,9 @@ import QtQuick.Layouts 1.12
 import org.krita.flake.text 1.0
 
 TextPropertyBase {
-    propertyName: i18nc("@label:listbox", "Word Break");
-    propertyType: TextPropertyBase.Character;
+    propertyTitle: i18nc("@label:listbox", "Word Break");
+    propertyName: "word-break";
+    propertyType: TextPropertyConfigModel.Character;
     toolTip: i18nc("@info:tooltip",
                    "Word Break allows fine-tuning the line breaking by toggling whether to only break at words or also allow breaking at characters. Useful for Korean or Ethiopian.");
     searchTerms: i18nc("comma separated search terms for the word-break property, matching is case-insensitive",
@@ -21,7 +22,9 @@ TextPropertyBase {
     onPropertiesUpdated: {
         blockSignals = true;
         breakType = properties.wordBreak;
-        visible = properties.wordBreakState !== KoSvgTextPropertiesModel.PropertyUnset;
+
+        propertyState = [properties.wordBreakState];
+        setVisibleFromProperty();
         blockSignals = false;
     }
 
@@ -44,23 +47,27 @@ TextPropertyBase {
         }
 
         Label {
-            text: propertyName;
+            text: propertyTitle;
             elide: Text.ElideRight;
             Layout.fillWidth: true;
             font.italic: properties.wordBreakState === KoSvgTextPropertiesModel.PropertyTriState;
         }
 
 
-        ComboBox {
+        SqueezedComboBox {
             id: wordBreakCmb
             model: [
-                { text: i18nc("@label:inlistbox", "Normal"), value: KoSvgText.WordBreakNormal},
-                { text: i18nc("@label:inlistbox", "Keep-all"), value: KoSvgText.WordBreakKeepAll},
-                { text: i18nc("@label:inlistbox", "Break-all"), value: KoSvgText.WordBreakBreakAll}
+                { text: i18nc("@label:inlistbox", "Normal"), value: KoSvgText.WordBreakNormal,
+                    toolTip:i18nc("@info:tooltip", "No additional adjustments are made to the regular line break algorithm.")},
+                { text: i18nc("@label:inlistbox", "Keep-all"), value: KoSvgText.WordBreakKeepAll,
+                toolTip:i18nc("@info:tooltip", "Soft breaks will only be allowed inside words, typically delimited by spaces.")},
+                { text: i18nc("@label:inlistbox", "Break-all"), value: KoSvgText.WordBreakBreakAll,
+                    toolTip:i18nc("@info:tooltip", "Soft breaks will occur along any grapheme.")}
             ]
             Layout.fillWidth: true;
             textRole: "text";
             valueRole: "value";
+            toolTipRole: "toolTip";
             onActivated: breakType = currentValue;
             wheelEnabled: true;
         }

@@ -43,6 +43,7 @@ set(kritaglobal_LIB_SRCS
     KisBackup.cpp
     KisSampleRectIterator.cpp
     KisCursorOverrideLock.cpp
+    kis_random_source.cpp
 )
 
 if(WIN32)
@@ -55,7 +56,9 @@ endif(WIN32)
 if (ANDROID)
     set (kritaglobal_LIB_SRCS ${kritaglobal_LIB_SRCS} KisAndroidCrashHandler.cpp)
     include_directories(${unwindstack_INCLUDE_DIR})
-    include_directories(${Qt5AndroidExtras_INCLUDE_DIRS})
+    if (QT_MAJOR_VERSION STREQUAL "5")
+        include_directories(${Qt5AndroidExtras_INCLUDE_DIRS})
+    endif()
 endif()
 
 if (ANDROID)

@@ -7,60 +7,67 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import org.krita.flake.text 1.0
 
-ComboBox {
+SqueezedComboBox {
+    id: root;
     property QtObject spinBoxControl;
     property bool isFontSize: false;
-    property int comboBoxUnit;
+    property bool isLineHeight: false;
+    property alias dataUnit: converter.dataUnit;
+    property alias dataValue: converter.dataValue;
+    property alias dpi: converter.dpi;
+    property alias userValue: converter.userValue;
+
     property bool allowPercentage: true;
+    property alias percentageReference: converter.percentageReference;
+
     wheelEnabled: true;
 
-    property string ptString: i18nc("@label:inlistbox", "Pt");
-    property string emString: i18nc("@label:inlistbox", "Em");
-    property string exString: i18nc("@label:inlistbox", "Ex");
-    property string prcString: i18nc("@label:inlistbox", "%");
-
-    Component.onCompleted: {
-        if (!allowPercentage) {
-            // Not great, but listmodels don't seem to allow adding i18n strings as properties, because they are in functions?
-            model = [
-                        {text: ptString, value: 0},
-                        {text: emString, value: 2},
-                        {text: exString, value: 3}
-                    ];
-        }
+    TextMetrics {
+        id: symbolWidth;
+        font: root.font;
+        text: displayText;
     }
 
-    model: [
-        {text: ptString, value: 0},
-        {text: emString, value: 2},
-        {text: exString, value: 3},
-        {text: prcString, value: 1}
-    ]
-    textRole: "text";
-    valueRole: "value";
-    onActivated: {
-        var currentValueInPt = 0;
-        if (comboBoxUnit === 0) {
-            currentValueInPt = spinBoxControl.value;
-        } else if (comboBoxUnit === 2) {
-            currentValueInPt = spinBoxControl.value * properties.resolvedFontSize(isFontSize);
-        } else if (comboBoxUnit === 3) {
-            currentValueInPt = spinBoxControl.value * properties.resolvedXHeight(isFontSize);
-        } else if (comboBoxUnit === 1) {
-            currentValueInPt = (spinBoxControl.value / 100) * properties.resolvedFontSize(isFontSize);
-        }
+    property int minimumUnitBoxWidth: symbolWidth.width+leftPadding+rightPadding+spacing+indicator.width;
 
-        var newValue = 0;
-        if (currentValue === 0) {
-            newValue = currentValueInPt
-        } else if (currentValue === 2) {
-            newValue = currentValueInPt / properties.resolvedFontSize(isFontSize);
-        } else if (currentValue === 3) {
-            newValue = currentValueInPt / properties.resolvedXHeight(isFontSize);
-        } else if (currentValue === 1) {
-            newValue = (currentValueInPt / properties.resolvedFontSize(isFontSize)) * 100;
+    displayText: converter.symbol;
+
+    function setTextProperties(properties) {
+        converter.setFontMetricsFromTextPropertiesModel(properties, isFontSize, isLineHeight);
+    }
+    function setDataValueAndUnit(value, unit) {
+        converter.setDataValueAndUnit(value, unit);
+    }
+
+    CssQmlUnitConverter {
+        id: converter;
+        dataMultiplier: spinBoxControl.multiplier;
+
+        onUserUnitChanged: root.currentIndex = root.indexOfValue(userUnit);
+    }
+
+    Component.onCompleted: {
+        var userUnitModel = [
+                    { user: CssQmlUnitConverter.Pt, data: 0},
+                    { user: CssQmlUnitConverter.Em, data: 2},
+                    { user: CssQmlUnitConverter.Ex, data: 3},
+                    { user: CssQmlUnitConverter.Cap, data: 4},
+                    { user: CssQmlUnitConverter.Ch, data: 5},
+                    { user: CssQmlUnitConverter.Ic, data: 6},
+                    { user: CssQmlUnitConverter.Lh, data: 7}
+                ];
+        if (allowPercentage) {
+            // Not great, but listmodels don't seem to allow adding i18n strings as properties, because they are in functions?
+            userUnitModel.push( { user: CssQmlUnitConverter.Percentage, data: 1})
         }
-        comboBoxUnit = currentValue;
-        spinBoxControl.value = newValue;
+        converter.setDataUnitMap(userUnitModel);
+        converter.setDataValueAndUnit(0, 0);
+    }
+
+    model: converter.userUnitModel;
+    textRole: "description";
+    valueRole: "value";
+    onCurrentValueChanged: {
+        converter.userUnit = currentValue;
     }
 }

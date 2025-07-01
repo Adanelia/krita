@@ -13,7 +13,6 @@
 #include <QTextStream>
 #include <QTextCodec>
 #include <QHash>
-#include <QList>
 #include <QByteArray>
 #include <QDomDocument>
 #include <QDomElement>
@@ -129,6 +128,7 @@ struct AddSwatchCommand : public KUndo2Command
         else {
             modifiedGroup->setSwatch(m_swatch, m_x, m_y);
         }
+        m_colorSet->notifySwatchChanged(m_groupName, m_x, m_y);
     }
 
     /// revert the actions done in redo
@@ -136,6 +136,7 @@ struct AddSwatchCommand : public KUndo2Command
     {
         KisSwatchGroupSP modifiedGroup = m_colorSet->getGroup(m_groupName);
         modifiedGroup->removeSwatch(m_x, m_y);
+        m_colorSet->notifySwatchChanged(m_groupName, m_x, m_y);
     }
 
 private:
@@ -163,12 +164,14 @@ struct RemoveSwatchCommand : public KUndo2Command
     void redo() override
     {
         m_group->removeSwatch(m_x, m_y);
+        m_colorSet->notifySwatchChanged(m_group->name(), m_x, m_y);
     }
 
     /// revert the actions done in redo
     void undo() override
     {
         m_group->setSwatch(m_swatch, m_x, m_y);
+        m_colorSet->notifySwatchChanged(m_group->name(), m_x, m_y);
     }
 
 private:
@@ -196,6 +199,7 @@ struct ChangeGroupNameCommand : public KUndo2Command
     {
         KisSwatchGroupSP group = m_colorSet->getGroup(m_oldGroupName);
         group->setName(m_newGroupName);
+        Q_EMIT m_colorSet->entryChanged(0, m_colorSet->startRowForGroup(m_newGroupName));
     }
 
     /// revert the actions done in redo
@@ -203,6 +207,7 @@ struct ChangeGroupNameCommand : public KUndo2Command
     {
         KisSwatchGroupSP group = m_colorSet->getGroup(m_newGroupName);
         group->setName(m_oldGroupName);
+        Q_EMIT m_colorSet->entryChanged(0, m_colorSet->startRowForGroup(m_oldGroupName));
     }
 
 private:
@@ -240,8 +245,10 @@ struct MoveGroupCommand : public KUndo2Command
         if (m_groupNameInsertBefore != KoColorSet::GLOBAL_GROUP_NAME &&
                 m_groupName != KoColorSet::GLOBAL_GROUP_NAME)
         {
+            Q_EMIT m_colorSet->layoutAboutToChange();
             KisSwatchGroupSP group = m_colorSet->d->swatchGroups.takeAt(m_oldIndex);
             m_colorSet->d->swatchGroups.insert(m_newIndex, group);
+            Q_EMIT m_colorSet->layoutChanged();
         }
     }
 
@@ -249,8 +256,10 @@ struct MoveGroupCommand : public KUndo2Command
     /// revert the actions done in redo
     void undo() override
     {
+        Q_EMIT m_colorSet->layoutAboutToChange();
         KisSwatchGroupSP group = m_colorSet->d->swatchGroups.takeAt(m_newIndex);
         m_colorSet->d->swatchGroups.insert(m_oldIndex, group);
+        Q_EMIT m_colorSet->layoutChanged();
     }
 
 private:
@@ -279,7 +288,9 @@ struct AddGroupCommand : public KUndo2Command
         group->setName(m_groupName);
         group->setColumnCount(m_columnCount);
         group->setRowCount(m_rowCount);
+        Q_EMIT m_colorSet->layoutAboutToChange();
         m_colorSet->d->swatchGroups.append(group);
+        Q_EMIT m_colorSet->layoutChanged();
     }
 
 
@@ -296,7 +307,9 @@ struct AddGroupCommand : public KUndo2Command
             idx++;
         }
         if (found) {
+            Q_EMIT m_colorSet->layoutAboutToChange();
             m_colorSet->d->swatchGroups.takeAt(idx);
+            Q_EMIT m_colorSet->layoutChanged();
         }
     }
 
@@ -336,12 +349,15 @@ struct RemoveGroupCommand : public KUndo2Command
             }
         }
 
+        Q_EMIT m_colorSet->layoutAboutToChange();
         m_colorSet->d->swatchGroups.removeOne(m_oldGroup);
+        Q_EMIT m_colorSet->layoutChanged();
     }
 
     /// revert the actions done in redo
     void undo() override
     {
+        Q_EMIT m_colorSet->layoutAboutToChange();
         m_colorSet->d->swatchGroups.insert(m_groupIndex, m_oldGroup);
 
         // remove all colors that were inserted into global
@@ -353,6 +369,7 @@ struct RemoveGroupCommand : public KUndo2Command
                                          info.row + m_startingRow);
             }
         }
+        Q_EMIT m_colorSet->layoutChanged();
     }
 
 private:
@@ -384,15 +401,19 @@ struct ClearCommand : public KUndo2Command
         m_colorSet->d->swatchGroups.clear();
         KisSwatchGroupSP global(new KisSwatchGroup);
         global->setName(KoColorSet::GLOBAL_GROUP_NAME);
+        Q_EMIT m_colorSet->layoutAboutToChange();
         m_colorSet->d->swatchGroups.append(global);
+        Q_EMIT m_colorSet->layoutChanged();
     }
 
 
     /// revert the actions done in redo
     void undo() override
     {
+        Q_EMIT m_colorSet->layoutAboutToChange();
         m_colorSet->d->swatchGroups = m_OldColorSet->d->swatchGroups;
         KUndo2Command::undo();
+        Q_EMIT m_colorSet->layoutChanged();
     }
 
 private:
@@ -412,20 +433,24 @@ struct SetColumnCountCommand : public KUndo2Command
     /// redo the command
     void redo() override
     {
+        Q_EMIT m_colorSet->layoutAboutToChange();
         for (KisSwatchGroupSP &group : m_colorSet->d->swatchGroups) {
             group->setColumnCount(m_columnsCount);
         }
         m_colorSet->d->columns = m_columnsCount;
+        Q_EMIT m_colorSet->layoutChanged();
     }
 
 
     /// revert the actions done in redo
     void undo() override
     {
+        Q_EMIT m_colorSet->layoutAboutToChange();
         for (KisSwatchGroupSP &group : m_colorSet->d->swatchGroups) {
             group->setColumnCount(m_oldColumnsCount);
         }
         m_colorSet->d->columns = m_oldColumnsCount;
+        Q_EMIT m_colorSet->layoutChanged();
     }
 
 private:
@@ -746,6 +771,15 @@ void KoColorSet::setModified(bool _modified)
     }
 }
 
+void KoColorSet::notifySwatchChanged(const QString &groupName, int column, int row)
+{
+    int startRow = 0;
+    if (!groupName.isEmpty()) {
+        startRow = startRowForGroup(groupName) + 1;
+    }
+    Q_EMIT entryChanged(column, startRow + row);
+}
+
 
 void KoColorSet::canUndoChanged(bool canUndo)
 {
@@ -878,6 +912,15 @@ quint32 KoColorSet::colorCount() const
         colorCount += group->colorCount();
     }
     return colorCount;
+}
+
+quint32 KoColorSet::slotCount() const
+{
+    int slotCount = 0;
+    for (const KisSwatchGroupSP &group : d->swatchGroups) {
+        slotCount += group->slotCount();
+    }
+    return slotCount;
 }
 
 KisSwatchGroupSP KoColorSet::getGroup(const QString &name) const
@@ -1411,7 +1454,8 @@ bool KoColorSet::Private::loadAct()
     QFileInfo info(colorSet->filename());
     colorSet->setName(info.completeBaseName());
     KisSwatch swatch;
-    for (int i = 0; i < data.size(); i += 3) {
+    int numOfTriplets = int(data.size() / 3);
+    for (int i = 0; i < numOfTriplets * 3; i += 3) {
         quint8 r = data[i];
         quint8 g = data[i+1];
         quint8 b = data[i+2];
@@ -2266,7 +2310,6 @@ bool KoColorSet::Private::loadAcb()
 {
 
     QFileInfo info(colorSet->filename());
-    colorSet->setName(info.completeBaseName());
 
     QBuffer buf(&data);
     buf.open(QBuffer::ReadOnly);
@@ -2301,6 +2344,7 @@ bool KoColorSet::Private::loadAcb()
         metadata.append(metadataString);
     }
     QString title = metadata.at(0);
+    colorSet->setName(title);
     QString prefix = metadata.at(1);
     QString postfix = metadata.at(2);
     QString description = metadata.at(3);

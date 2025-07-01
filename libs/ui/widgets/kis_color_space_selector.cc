@@ -58,7 +58,7 @@ KisColorSpaceSelector::KisColorSpaceSelector(QWidget *parent)
             this, SLOT(slotModelsComboBoxActivated(KoID)));
     connect(d->colorSpaceSelector->cmbColorDepth, SIGNAL(activated(KoID)),
             this, SLOT(slotDepthsComboBoxActivated()));
-    connect(d->colorSpaceSelector->cmbProfile, SIGNAL(activated(QString)),
+    connect(d->colorSpaceSelector->cmbProfile, SIGNAL(textActivated(QString)),
             this, SLOT(slotProfilesComboBoxActivated()));
     connect(d->colorSpaceSelector->bnInstallProfile, SIGNAL(clicked()),
             this, SLOT(installProfile()));
@@ -171,6 +171,12 @@ void KisColorSpaceSelector::setCurrentColorSpace(const KoColorSpace* colorSpace)
 
 void KisColorSpaceSelector::showColorBrowserButton(bool showButton) {
     d->colorSpaceSelector->bnAdvanced->setVisible(showButton);
+}
+
+void KisColorSpaceSelector::showDepth(bool showDepth)
+{
+    d->colorSpaceSelector->cmbColorDepth->setVisible(showDepth);
+    d->colorSpaceSelector->lblColorDepths->setVisible(showDepth);
 }
 
 void KisColorSpaceSelector::colorSpaceChanged()

@@ -17,14 +17,18 @@ class TestResourceLocator : public QObject
     Q_OBJECT
 private Q_SLOTS:
     void initTestCase();
+    void init();
+
+    void testForeignKeysAreEnabled();
+
     void testLocatorInitialization();
-    void testStorageInitialization();
-    void testLocatorSynchronization();
 
     void testResourceLocationBase();
     void testResource();
     void testResourceForId();
     void testDocumentStorage();
+    void testLoadResourceMetadataFromStorage();
+    void testLoadResourceMetadataFromStorage_data();
 
     void cleanupTestCase();
 
@@ -32,6 +36,9 @@ private Q_SLOTS:
 
     void testImportExportResource();
     void testImportDuplicatedResource();
+
+    void testOrphanedMetadataRemoval_data();
+    void testOrphanedMetadataRemoval();
 
 private:
 

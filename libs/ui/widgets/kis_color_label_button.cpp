@@ -147,7 +147,11 @@ void KisColorLabelButton::paintEvent(QPaintEvent *event)
     }
 }
 
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
 void KisColorLabelButton::enterEvent(QEvent *event) {
+#else
+void KisColorLabelButton::enterEvent(QEnterEvent *event) {
+#endif
     Q_UNUSED(event);
     update();
 }
@@ -236,11 +240,7 @@ void KisColorLabelFilterGroup::setViableLabels(const QSet<int> &labels) {
 void KisColorLabelFilterGroup::setViableLabels(const QList<int> &viableLabels)
 {
     QSet<int> uniqueViableLabels;
-#if QT_VERSION >= QT_VERSION_CHECK(5,14,0)
     uniqueViableLabels = QSet<int>(viableLabels.cbegin(), viableLabels.cend());
-#else
-    uniqueViableLabels = QSet<int>::fromList(viableLabels);
-#endif
     setViableLabels(uniqueViableLabels);
 }
 

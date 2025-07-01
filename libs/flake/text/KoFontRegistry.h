@@ -6,11 +6,14 @@
 #ifndef KOFONTREGISTRY_H
 #define KOFONTREGISTRY_H
 
+#include <QObject>
 #include <QScopedPointer>
 #include <QVector>
 
 #include <KoFontLibraryResourceUtils.h>
+#include <KoFFWWSConverter.h>
 
+#include "KoCSSFontInfo.h"
 #include "kritaflake_export.h"
 
 /**
@@ -24,10 +27,11 @@
  * It also provides a configuration function to handle all the
  * size and variation axis values.
  */
-class KRITAFLAKE_EXPORT KoFontRegistry
+class KRITAFLAKE_EXPORT KoFontRegistry: public QObject
 {
+    Q_OBJECT
 public:
-    KoFontRegistry();
+    KoFontRegistry(QObject *parent = nullptr);
     ~KoFontRegistry();
 
     static KoFontRegistry *instance();
@@ -35,25 +39,19 @@ public:
     /**
      * @brief facesForCSSValues
      * This selects a font with fontconfig using the given
-     * values. If "text" is not empty, it will try to select
-     * fallback fonts as well.
+     * values. If "text" is not empty and disableFontMatching is false,
+     * it will try to select fallback fonts as well.
      *
      * @returns a vector of loaded FT_Faces, the "lengths" vector
      * will be filled with the lengths of consequetive characters
      * a face can be set on.
      */
-    std::vector<FT_FaceSP> facesForCSSValues(const QStringList &families,
-                                             QVector<int> &lengths,
-                                             const QMap<QString, qreal> &axisSettings,
+    std::vector<FT_FaceSP> facesForCSSValues(QVector<int> &lengths,
+                                             KoCSSFontInfo info = KoCSSFontInfo(),
                                              const QString &text = "",
                                              quint32 xRes = 72,
                                              quint32 yRes = 72,
-                                             qreal size = -1,
-                                             qreal fontSizeAdjust = 1.0,
-                                             int weight = 400,
-                                             int width = 100,
-                                             bool italic = false,
-                                             int slant = 0,
+                                             bool disableFontMatching = false,
                                              const QString &language = QString());
 
     /**
@@ -73,6 +71,49 @@ public:
                         quint32 yRes,
                         const QMap<QString, qreal> &axisSettings);
 
+    /**
+     * @brief collectRepresentations
+     * @return a list of Width/Weight/Slant font family representations.
+     */
+    QList<KoFontFamilyWWSRepresentation> collectRepresentations() const;
+
+    /**
+     * @brief representationByFamilyName
+     * This simplifies retrieving the representation for a given font family.
+     * @param familyName - the familyName associated with the font.
+     * @param found - bool to check for success.
+     * @return the font family.
+     */
+    std::optional<KoFontFamilyWWSRepresentation> representationByFamilyName(const QString &familyName) const;
+
+    // Get the closest font family resource name for a given font family name, used by the selectors.
+    std::optional<QString> wwsNameByFamilyName(const QString familyName) const;
+
+    /**
+     * @brief slantMode
+     * testing the slant mode can be annoying, so this is a convenience function to return the slant mode.
+     * @param face the freetype face to test for.
+     * @return the slant mode, can be normal, italic or oblique.
+     */
+    static QFont::Style slantMode(FT_FaceSP face);
+
+    KoSvgText::FontMetrics fontMetricsForCSSValues(KoCSSFontInfo info = KoCSSFontInfo(),
+                                                   const bool isHorizontal = true,
+                                                   const KoSvgText::TextRendering rendering = KoSvgText::RenderingAuto,
+                                                   const QString &text = "",
+                                                   quint32 xRes = 72,
+                                                   quint32 yRes = 72,
+                                                   bool disableFontMatching = false,
+                                                   const QString &language = QString());
+
+    static KoSvgText::FontMetrics generateFontMetrics(FT_FaceSP face, bool isHorizontal = true, QString script = QString(), const KoSvgText::TextRendering rendering = KoSvgText::RenderingAuto);
+
+    static int32_t loadFlagsForFace(FT_Face face, bool isHorizontal = true, int32_t loadFlags = 0, const KoSvgText::TextRendering rendering = KoSvgText::RenderingAuto);
+private Q_SLOTS:
+    /**
+     * Update the config and reset the FontChangeListener.
+     */
+    void updateConfig();
 private:
     class Private;
 

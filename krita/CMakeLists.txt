@@ -29,6 +29,15 @@ else()
 endif()
 
 if (WIN32)
+    # Private headers are needed for main.cc to enable WinTab support
+    set_source_files_properties(
+        main.cc
+        PROPERTIES
+        INCLUDE_DIRECTORIES "${Qt${QT_MAJOR_VERSION}Gui_PRIVATE_INCLUDE_DIRS}"
+        )
+endif()
+
+if (WIN32)
     set(krita_windows_stub_ICONS_SRCS "")
     ecm_add_app_icon(krita_windows_stub_ICONS_SRCS ICONS ${ICON_SRCS} OUTFILE_BASENAME krita)
 
@@ -90,9 +99,13 @@ set(krita_QRCS
     CACHE INTERNAL "krita_QRCS"
 )
 
+if (QT_MAJOR_VERSION STREQUAL "6")
+    list(APPEND krita_QRCS ${CMAKE_SOURCE_DIR}/krita/data/mime-database/mime-database.qrc)
+endif()
+
 qt_add_resources(krita_SRCS ${krita_QRCS})
 
-if (ANDROID)
+if (ANDROID AND QT_MAJOR_VERSION STREQUAL "5")
     kis_add_library(krita SHARED ${krita_SRCS})
     target_link_libraries(krita PRIVATE Qt5::AndroidExtras)
 elseif (WIN32)
@@ -129,6 +142,7 @@ if (APPLE)
     set_target_properties(krita PROPERTIES MACOSX_BUNDLE_SHORT_VERSION_STRING ${KRITA_VERSION_NUMBER_STRING})
     set_target_properties(krita PROPERTIES MACOSX_BUNDLE_BUNDLE_VERSION ${KRITA_VERSION_NUMBER_STRING})
     set_target_properties(krita PROPERTIES MACOSX_BUNDLE_COPYRIGHT "GNU Public License, V2 or, at your option, any later version.")
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.template ${CMAKE_CURRENT_BINARY_DIR}/Info.plist)
 endif ()
 
 if (NOT ANDROID)
@@ -140,26 +154,33 @@ if (NOT ANDROID)
         kritaversion
   )
 
-
-  install(TARGETS krita_version ${INSTALL_TARGETS_DEFAULT_ARGS})
-
   if(APPLE)
       set_target_properties(krita_version PROPERTIES INSTALL_RPATH "@loader_path/../Frameworks;@executable_path/../lib;@executable_path/../Frameworks")
       set_property(TARGET krita_version PROPERTY MACOSX_BUNDLE OFF)
   endif ()
+
+  install(TARGETS krita_version ${INSTALL_TARGETS_DEFAULT_ARGS})
 endif()
 
 
-install(TARGETS krita ${INSTALL_TARGETS_DEFAULT_ARGS})
+if(APPLE)
+    install(TARGETS krita ${INSTALL_TARGETS_DEFAULT_ARGS} BUNDLE DESTINATION bin)
+else()
+    install(TARGETS krita ${INSTALL_TARGETS_DEFAULT_ARGS})
+endif()
 install(FILES org.kde.krita.desktop DESTINATION ${KDE_INSTALL_APPDIR})
-install(FILES  krita.action kritamenu.action DESTINATION ${DATA_INSTALL_DIR}/krita/actions)
+install(FILES  krita.action kritamenu.action DESTINATION ${KDE_INSTALL_DATADIR}/krita/actions)
 install(FILES  org.kde.krita.appdata.xml DESTINATION ${KDE_INSTALL_METAINFODIR} )
 
-install(DIRECTORY DESTINATION ${DATA_INSTALL_DIR}/krita/shortcuts)
+install(DIRECTORY DESTINATION ${KDE_INSTALL_DATADIR}/krita/shortcuts)
 
 if (WIN32)
     configure_file(versioninfo.rc.in ${CMAKE_CURRENT_BINARY_DIR}/versioninfo.rc)
-    configure_file(krita.exe.manifest.in ${CMAKE_CURRENT_BINARY_DIR}/krita.exe.manifest)
+    if (QT_MAJOR_VERSION STREQUAL "6")
+        configure_file(krita6.exe.manifest.in ${CMAKE_CURRENT_BINARY_DIR}/krita.exe.manifest)
+    else()
+        configure_file(krita.exe.manifest.in ${CMAKE_CURRENT_BINARY_DIR}/krita.exe.manifest)
+    endif()
     if (MINGW)
         # CMake does not know how to embed manifest on mingw, so we create our own RC file to be included
         file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/krita.exe.manifest.rc "1 24 \"krita.exe.manifest\"\n")
@@ -174,7 +195,12 @@ if (WIN32)
         ${CMAKE_CURRENT_BINARY_DIR}/versioninfo.rc
         ${KRITA_MANIFEST_SRC}
     )
-    target_link_libraries(krita_windows_stub_exe PRIVATE krita Qt${QT_MAJOR_VERSION}::WinMain)
+    target_link_libraries(krita_windows_stub_exe PRIVATE krita)
+    if (QT_MAJOR_VERSION STREQUAL "6")
+        target_link_libraries(krita_windows_stub_exe PRIVATE Qt6::EntryPointPrivate)
+    else()
+        target_link_libraries(krita_windows_stub_exe PRIVATE Qt5::WinMain)
+    endif()
     set_target_properties(krita_windows_stub_exe
         PROPERTIES
             OUTPUT_NAME "krita"

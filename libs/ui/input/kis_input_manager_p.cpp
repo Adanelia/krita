@@ -25,6 +25,8 @@
 
 #include "kis_zoom_and_rotate_action.h"
 #include "kis_popup_palette.h"
+#include "config-qt-patches-present.h"
+
 
 /**
  * This hungry class EventEater encapsulates event masking logic.
@@ -229,7 +231,7 @@ KisInputManager::Private::Private(KisInputManager *qq)
      * In Linux distributions Qt is not patched, so we should
      * use workaround for them
      */
-#if defined Q_OS_LINUX &&  !defined QT_HAS_ENTER_LEAVE_PATCH
+#if defined Q_OS_LINUX &&  !KRITA_QT_HAS_UNBALANCED_KEY_PRESS_RELEASE_PATCH
     useUnbalancedKeyPressEventWorkaround = true;
 #endif
 
@@ -421,28 +423,6 @@ KisInputManager::Private::ProximityNotifier::ProximityNotifier(KisInputManager::
 
 bool KisInputManager::Private::ProximityNotifier::eventFilter(QObject* object, QEvent* event )
 {
-    /**
-     * All Qt builds in range 5.7.0...5.11.X on X11 had a problem that made all
-     * the tablet events be accepted by default. It meant that no mouse
-     * events were synthesized, and, therefore, no Enter/Leave were generated.
-     *
-     * The fix for this bug has been added only in Qt 5.12.0:
-     * https://codereview.qt-project.org/#/c/239918/
-     *
-     * To avoid this problem we should explicitly ignore all the tablet events.
-     */
-#if defined Q_OS_LINUX && \
-    QT_VERSION >= QT_VERSION_CHECK(5, 9, 0) && \
-    QT_VERSION < QT_VERSION_CHECK(5, 12, 0)
-
-    if (event->type() == QEvent::TabletMove ||
-        event->type() == QEvent::TabletPress ||
-        event->type() == QEvent::TabletRelease) {
-
-        event->ignore();
-    }
-#endif
-
     switch (event->type()) {
     case QEvent::TabletEnterProximity:
         d->debugEvent<QEvent, false>(event);
@@ -493,11 +473,7 @@ void KisInputManager::Private::addStrokeShortcut(KisAbstractInputAction* action,
 BOOST_PP_REPEAT_FROM_TO(1, 25, EXTRA_BUTTON, _)
 
     if (!buttonSet.empty()) {
-#if QT_VERSION >= QT_VERSION_CHECK(5,14,0)
         strokeShortcut->setButtons(QSet<Qt::Key>(modifiers.cbegin(), modifiers.cend()), buttonSet);
-#else
-        strokeShortcut->setButtons(QSet<Qt::Key>::fromList(modifiers), buttonSet);
-#endif
         matcher.addShortcut(strokeShortcut);
     }
     else {
@@ -519,11 +495,7 @@ void KisInputManager::Private::addKeyShortcut(KisAbstractInputAction* action, in
     //the way the shortcut matcher is currently implemented.
     QList<Qt::Key> allKeys = keys;
     Qt::Key key = allKeys.takeLast();
-#if QT_VERSION >= QT_VERSION_CHECK(5,14,0)
     QSet<Qt::Key> modifiers = QSet<Qt::Key>(allKeys.begin(), allKeys.end());
-#else
-    QSet<Qt::Key> modifiers = QSet<Qt::Key>::fromList(allKeys);
-#endif
     keyShortcut->setKey(modifiers, key);
     matcher.addShortcut(keyShortcut);
 }
@@ -555,11 +527,7 @@ void KisInputManager::Private::addWheelShortcut(KisAbstractInputAction* action, 
     default:
         return;
     }
-#if QT_VERSION >= QT_VERSION_CHECK(5,14,0)
     keyShortcut->setWheel(QSet<Qt::Key>(modifiers.begin(), modifiers.end()), a);
-#else
-    keyShortcut->setWheel(QSet<Qt::Key>::fromList(modifiers), a);
-#endif
     matcher.addShortcut(keyShortcut.take());
 }
 

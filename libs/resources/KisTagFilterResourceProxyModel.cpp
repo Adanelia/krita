@@ -11,6 +11,7 @@
 #include <KisResourceModel.h>
 #include <KisTagResourceModel.h>
 #include <KisTagModel.h>
+#include <KisResourceMetaDataModel.h>
 
 #include <kis_debug.h>
 #include <KisResourceSearchBoxFilter.h>
@@ -203,6 +204,13 @@ bool KisTagFilterResourceProxyModel::setResourceMetaData(KoResourceSP resource, 
     return false;
 }
 
+bool KisTagFilterResourceProxyModel::additionalResourceNameChecks(const QModelIndex &index, const KisResourceSearchBoxFilter *filter) const
+{
+    Q_UNUSED(index)
+    Q_UNUSED(filter)
+    return false;
+}
+
 void KisTagFilterResourceProxyModel::setMetaDataFilter(QMap<QString, QVariant> metaDataMap)
 {
     Q_EMIT beforeFilterChanges();
@@ -215,6 +223,11 @@ void KisTagFilterResourceProxyModel::setTagFilter(const KisTagSP tag)
 {
     d->currentTagFilter = tag;
     updateTagFilter();
+}
+
+KisTagSP KisTagFilterResourceProxyModel::currentTagFilter() const
+{
+    return d->currentTagFilter;
 }
 
 void KisTagFilterResourceProxyModel::setStorageFilter(bool useFilter, int storageId)
@@ -306,6 +319,11 @@ void KisTagFilterResourceProxyModel::setFilterInCurrentTag(bool filterInCurrentT
     updateTagFilter();
 }
 
+bool KisTagFilterResourceProxyModel::filterInCurrentTag() const
+{
+    return d->filteringWithinCurrentTag;
+}
+
 bool KisTagFilterResourceProxyModel::tagResources(const KisTagSP tag, const QVector<int> &resourceIds)
 {
     return d->tagResourceModel->tagResources(tag, resourceIds);
@@ -349,14 +367,12 @@ bool KisTagFilterResourceProxyModel::filterAcceptsRow(int source_row, const QMod
         }
     }
 
-    bool metaDataMatches = true;
-    QMap<QString, QVariant> resourceMetaData = sourceModel()->data(idx, Qt::UserRole + KisAbstractResourceModel::MetaData).toMap();
+    KisResourceMetaDataModel *metaDataModel = KisResourceModelProvider::resourceMetadataModel();
+    const int resourceId = sourceModel()->data(idx, Qt::UserRole + KisAbstractResourceModel::Id).toInt();
     Q_FOREACH(const QString &key, d->metaDataMapFilter.keys()) {
-        if (resourceMetaData.contains(key)) {
-            metaDataMatches = (resourceMetaData[key] == d->metaDataMapFilter[key]);
-            if (!metaDataMatches) {
+        const QVariant value = metaDataModel->metaDataValue(resourceId, key);
+        if (value.isValid() && value != d->metaDataMapFilter[key]) {
                 return false;
-            }
         }
     }
 
@@ -366,9 +382,12 @@ bool KisTagFilterResourceProxyModel::filterAcceptsRow(int source_row, const QMod
     }
     QStringList resourceTags = sourceModel()->data(idx, Qt::UserRole + KisAbstractResourceModel::Tags).toStringList();
     bool resourceNameMatches = d->filter->matchesResource(resourceName, resourceTags);
+    if (!resourceNameMatches) {
+        resourceNameMatches = additionalResourceNameChecks(idx, d->filter.data());
+    }
 
 
-    return (resourceNameMatches && metaDataMatches);
+    return resourceNameMatches;
 }
 
 bool KisTagFilterResourceProxyModel::lessThan(const QModelIndex &source_left, const QModelIndex &source_right) const

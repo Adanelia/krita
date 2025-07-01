@@ -1,13 +1,19 @@
 # SPDX-License-Identifier: CC0-1.0
 
 from . import documenttoolsdialog
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (QFormLayout, QListWidget, QAbstractItemView,
-                             QDialogButtonBox, QVBoxLayout, QFrame, QTabWidget,
-                             QPushButton, QAbstractScrollArea, QMessageBox)
-import krita
+try:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import (QFormLayout, QListWidget, QAbstractItemView,
+                                 QDialogButtonBox, QVBoxLayout, QFrame, QTabWidget,
+                                 QPushButton, QAbstractScrollArea, QMessageBox)
+except:
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtWidgets import (QFormLayout, QListWidget, QAbstractItemView,
+                                 QDialogButtonBox, QVBoxLayout, QFrame, QTabWidget,
+                                 QPushButton, QAbstractScrollArea, QMessageBox)
+from krita import Krita
 import importlib
-
+from builtins import i18n
 
 class UIDocumentTools(object):
 
@@ -20,19 +26,19 @@ class UIDocumentTools(object):
         self.widgetDocuments = QListWidget()
         self.tabTools = QTabWidget()
         self.buttonBox = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
 
-        self.kritaInstance = krita.Krita.instance()
+        self.kritaInstance = Krita.instance()
         self.documentsList = []
 
         self.refreshButton.clicked.connect(self.refreshButtonClicked)
         self.buttonBox.accepted.connect(self.confirmButton)
         self.buttonBox.rejected.connect(self.mainDialog.close)
 
-        self.mainDialog.setWindowModality(Qt.NonModal)
-        self.widgetDocuments.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.mainDialog.setWindowModality(Qt.WindowModality.NonModal)
+        self.widgetDocuments.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.widgetDocuments.setSizeAdjustPolicy(
-            QAbstractScrollArea.AdjustToContents)
+            QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
 
     def initialize(self):
         self.loadDocuments()
@@ -45,8 +51,8 @@ class UIDocumentTools(object):
         self.formLayout.addRow(self.tabTools)
 
         self.line = QFrame()
-        self.line.setFrameShape(QFrame.HLine)
-        self.line.setFrameShadow(QFrame.Sunken)
+        self.line.setFrameShape(QFrame.Shape.HLine)
+        self.line.setFrameShadow(QFrame.Shadow.Sunken)
 
         self.mainLayout.addLayout(self.formLayout)
         self.mainLayout.addWidget(self.line)
@@ -104,4 +110,4 @@ class UIDocumentTools(object):
                 i18n("The selected documents has been modified."))
         else:
             self.msgBox.setText(i18n("Select at least one document."))
-        self.msgBox.exec_()
+        self.msgBox.exec()

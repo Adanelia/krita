@@ -8,7 +8,6 @@
 
 #include <QBuffer>
 #include <QCheckBox>
-#include <QComboBox>
 #include <QDial>
 #include <QInputDialog>
 #include <QItemSelectionModel>
@@ -602,7 +601,7 @@ StylesSelector::StylesSelector(QWidget *parent)
     // KisResourceModel doesn't support data with the EditRole
     ui.listStyles->setEditTriggers(QAbstractItemView::EditTrigger::NoEditTriggers);
 
-    connect(ui.cmbStyleCollections, SIGNAL(activated(QString)), this, SLOT(loadStyles(QString)));
+    connect(ui.cmbStyleCollections, SIGNAL(textActivated(QString)), this, SLOT(loadStyles(QString)));
     connect(ui.listStyles, SIGNAL(clicked(QModelIndex)), this, SLOT(selectStyle(QModelIndex)));
 
     refillCollections();

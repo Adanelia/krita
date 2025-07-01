@@ -5,10 +5,12 @@
  */
 
 #include "kis_extended_modifiers_mapper.h"
+#include "KisExtendedModifiersMapperPluginInterface.h"
 
-#include <QApplication>
+#include <KisApplication.h>
 #include <QKeyEvent>
-#include "kis_debug.h"
+
+#include <krita_container_utils.h>
 
 #ifdef Q_OS_MACOS
 
@@ -61,107 +63,11 @@ QVector<Qt::Key> queryPressedKeysWin()
     return result;
 }
 
-#elif defined HAVE_X11
-
-#include <QX11Info>
-#include <X11/X.h>
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
-#include <krita_container_utils.h>
-#include <X11/XKBlib.h>
-
-struct KeyMapping {
-    KeyMapping() {}
-    KeyMapping(KeySym sym, Qt::Key key) : x11KeySym(sym), qtKey(key) {}
-    KeySym x11KeySym {0};
-    Qt::Key qtKey {Qt::Key_unknown};
-};
-
-#endif /* HAVE_X11 */
+#endif /* Q_OS_WIN */
 
 struct KisExtendedModifiersMapper::Private
 {
-    Private();
-
-#ifdef HAVE_X11
-
-    QVector<KeyMapping> mapping;
-    char keysState[32];
-    int minKeyCode = 0;
-    int maxKeyCode = 0;
-
-    bool checkKeyCodePressedX11(KeyCode key);
-    bool checkKeySymPressedX11(KeySym sym);
-#endif /* HAVE_X11 */
 };
-
-#ifdef HAVE_X11
-
-KisExtendedModifiersMapper::Private::Private()
-{
-    XDisplayKeycodes(QX11Info::display(), &minKeyCode, &maxKeyCode);
-    XQueryKeymap(QX11Info::display(), keysState);
-
-    mapping.append(KeyMapping(XK_Shift_L, Qt::Key_Shift));
-    mapping.append(KeyMapping(XK_Shift_R, Qt::Key_Shift));
-
-    mapping.append(KeyMapping(XK_Control_L, Qt::Key_Control));
-    mapping.append(KeyMapping(XK_Control_R, Qt::Key_Control));
-
-    mapping.append(KeyMapping(XK_Meta_L, Qt::Key_Alt));
-    mapping.append(KeyMapping(XK_Meta_R, Qt::Key_Alt));
-    mapping.append(KeyMapping(XK_Mode_switch, Qt::Key_AltGr));
-    mapping.append(KeyMapping(XK_ISO_Level3_Shift, Qt::Key_AltGr));
-
-    mapping.append(KeyMapping(XK_Alt_L, Qt::Key_Alt));
-    mapping.append(KeyMapping(XK_Alt_R, Qt::Key_Alt));
-
-    mapping.append(KeyMapping(XK_Super_L, Qt::Key_Meta));
-    mapping.append(KeyMapping(XK_Super_R, Qt::Key_Meta));
-
-    mapping.append(KeyMapping(XK_Hyper_L, Qt::Key_Hyper_L));
-    mapping.append(KeyMapping(XK_Hyper_R, Qt::Key_Hyper_R));
-
-
-    mapping.append(KeyMapping(XK_space, Qt::Key_Space));
-
-    for (int qtKey = Qt::Key_0, x11Sym = XK_0;
-         qtKey <= Qt::Key_9;
-         qtKey++, x11Sym++) {
-
-        mapping.append(KeyMapping(x11Sym, Qt::Key(qtKey)));
-    }
-
-    for (int qtKey = Qt::Key_A, x11Sym = XK_a;
-         qtKey <= Qt::Key_Z;
-         qtKey++, x11Sym++) {
-
-        mapping.append(KeyMapping(x11Sym, Qt::Key(qtKey)));
-    }
-}
-
-bool KisExtendedModifiersMapper::Private::checkKeyCodePressedX11(KeyCode key)
-{
-    int byte = key / 8;
-    char mask = 1 << (key % 8);
-
-    return keysState[byte] & mask;
-}
-
-bool KisExtendedModifiersMapper::Private::checkKeySymPressedX11(KeySym sym)
-{
-    KeyCode key = XKeysymToKeycode(QX11Info::display(), sym);
-    return key != 0 ? checkKeyCodePressedX11(key) : false;
-}
-
-#else /* HAVE_X11 */
-
-KisExtendedModifiersMapper::Private::Private()
-{
-}
-
-#endif /* HAVE_X11 */
-
 
 KisExtendedModifiersMapper::KisExtendedModifiersMapper()
     : m_d(new Private)
@@ -183,56 +89,21 @@ void KisExtendedModifiersMapper::setLocalMonitor(bool activate, KisShortcutMatch
 KisExtendedModifiersMapper::ExtendedModifiers
 KisExtendedModifiersMapper::queryExtendedModifiers()
 {
-    ExtendedModifiers modifiers;
+    KisExtendedModifiersMapperPluginInterface *plugin =
+        static_cast<KisApplication*>(qApp)->extendedModifiersPluginInterface();
 
-#ifdef HAVE_X11
-
-    {
-        for (int keyCode = m_d->minKeyCode; keyCode <= m_d->maxKeyCode; keyCode++) {
-            if (m_d->checkKeyCodePressedX11(keyCode)) {
-
-                KeySym sym = XkbKeycodeToKeysym(QX11Info::display(), keyCode,
-                                                0, 0);
-                Q_FOREACH (const KeyMapping &map, m_d->mapping) {
-                    if (map.x11KeySym == sym) {
-                        modifiers << map.qtKey;
-                        break;
-                    }
-                }
-            }
-        }
+    if (plugin) {
+        return plugin->queryExtendedModifiers();
     }
 
-    // in X11 some keys may have multiple keysyms,
-    // (Alt Key == XK_Meta_{L,R}, XK_Meta_{L,R})
-    KritaUtils::makeContainerUnique(modifiers);
+    ExtendedModifiers modifiers;
 
-#elif defined Q_OS_WIN
-
+#if defined Q_OS_WIN
     modifiers = queryPressedKeysWin();
-
 #elif defined Q_OS_MACOS
     modifiers = queryPressedKeysMac();
 #else
-
-    Qt::KeyboardModifiers standardModifiers = queryStandardModifiers();
-
-    if (standardModifiers & Qt::ShiftModifier) {
-        modifiers << Qt::Key_Shift;
-    }
-
-    if (standardModifiers & Qt::ControlModifier) {
-        modifiers << Qt::Key_Control;
-    }
-
-    if (standardModifiers & Qt::AltModifier) {
-        modifiers << Qt::Key_Alt;
-    }
-
-    if (standardModifiers & Qt::MetaModifier) {
-        modifiers << Qt::Key_Meta;
-    }
-
+    modifiers = qtModifiersToQtKeys(queryStandardModifiers());
 #endif
 
     return modifiers;
@@ -255,3 +126,26 @@ Qt::Key KisExtendedModifiersMapper::workaroundShiftAltMetaHell(const QKeyEvent *
 
     return key;
 }
+
+KisExtendedModifiersMapper::ExtendedModifiers KisExtendedModifiersMapper::qtModifiersToQtKeys(Qt::KeyboardModifiers standardModifiers)
+{
+    ExtendedModifiers modifiers;
+
+    if (standardModifiers & Qt::ShiftModifier) {
+        modifiers << Qt::Key_Shift;
+    }
+
+    if (standardModifiers & Qt::ControlModifier) {
+        modifiers << Qt::Key_Control;
+    }
+
+    if (standardModifiers & Qt::AltModifier) {
+        modifiers << Qt::Key_Alt;
+    }
+
+    if (standardModifiers & Qt::MetaModifier) {
+        modifiers << Qt::Key_Meta;
+    }
+
+    return modifiers;
+};

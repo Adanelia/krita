@@ -6,7 +6,9 @@
 
 #include "inplace_transform_stroke_strategy.h"
 
+#include <QMutex>
 #include <QMutexLocker>
+#include <QElapsedTimer>
 #include "kundo2commandextradata.h"
 
 #include "kis_node_progress_proxy.h"
@@ -49,6 +51,7 @@
 #include "kis_selection_mask.h"
 #include "kis_undo_stores.h"
 #include "kis_transparency_mask.h"
+#include "kis_filter_mask.h"
 #include "commands_new/KisDisableDirtyRequestsCommand.h"
 #include <kis_shape_layer.h>
 #include "kis_raster_keyframe_channel.h"
@@ -552,6 +555,14 @@ void InplaceTransformStrokeStrategy::initStrokeCallback()
                     srcRect |= mask->selection()->selectedExactRect();
                 } else if (const KisTransparencyMask *mask = dynamic_cast<const KisTransparencyMask*>(node.data())) {
                     srcRect |= mask->selection()->selectedExactRect();
+                } else if (const KisFilterMask *mask = dynamic_cast<const KisFilterMask*>(node.data())) {
+                    /// Filter masks have special handling of transparency. Their filter
+                    /// may declare if they affect transparent pixels or not. In case of
+                    /// transformations we don't care about that, we should just transform
+                    /// non-default area of the mask.
+                    if (mask->paintDevice()) {
+                        srcRect |= mask->paintDevice()->nonDefaultPixelArea();
+                    }
                 } else {
                     /// We shouldn't include masks or layer styles into the handles rect,
                     /// in the end, we process the paint device only

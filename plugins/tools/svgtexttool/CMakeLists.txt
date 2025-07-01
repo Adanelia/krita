@@ -23,6 +23,10 @@ set (SvgTextTool_SRCS
     SvgTextToolFactory.cpp
     FontSizeAction.cpp
     SvgTextShapeManagerBlocker.cpp
+
+    glyphpalette/GlyphPaletteDialog.cpp
+    glyphpalette/GlyphPaletteProxyModel.cpp
+    glyphpalette/GlyphPaletteAltPopup.cpp
 )
 
 ki18n_wrap_ui(SvgTextTool_SRCS 
@@ -33,7 +37,7 @@ ki18n_wrap_ui(SvgTextTool_SRCS
 
 install( FILES
     SvgTextTool.action
-    DESTINATION  ${DATA_INSTALL_DIR}/krita/actions
+    DESTINATION  ${KDE_INSTALL_DATADIR}/krita/actions
 )
 
 set(SvgTextTool_SOURCES
@@ -46,7 +50,14 @@ kis_add_library(krita_tool_svgtext_static STATIC ${SvgTextTool_SRCS})
 kis_add_library(krita_tool_svgtext MODULE ${SvgTextTool_SOURCES})
 generate_export_header(krita_tool_svgtext_static BASE_NAME kritatoolsvgtext)
 
-target_link_libraries(krita_tool_svgtext_static kritaui KF${KF_MAJOR}::I18n)
+target_link_libraries(krita_tool_svgtext_static
+    kritaui
+    Qt${QT_MAJOR_VERSION}::Quick
+    Qt${QT_MAJOR_VERSION}::QuickWidgets
+    Qt${QT_MAJOR_VERSION}::QuickControls2
+    Qt${QT_MAJOR_VERSION}::Qml
+    KF${KF_MAJOR}::I18n)
+
 target_link_libraries(krita_tool_svgtext PRIVATE krita_tool_svgtext_static)
 
 install(TARGETS krita_tool_svgtext DESTINATION ${KRITA_PLUGIN_INSTALL_DIR})
